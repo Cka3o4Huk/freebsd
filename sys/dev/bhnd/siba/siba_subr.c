@@ -237,6 +237,8 @@ siba_dinfo_get_port(struct siba_devinfo *dinfo, bhnd_port_type port_type,
 	case BHND_PORT_AGENT:
 		return (NULL);
 	}
+
+	return (NULL);
 }
 
 
