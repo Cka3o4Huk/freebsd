@@ -531,11 +531,14 @@ bhnd_release_resources(device_t dev, const struct resource_spec *rs,
  * Parse the CHIPC_ID_* fields from the ChipCommon CHIPC_ID
  * register, returning its bhnd_chipid representation.
  * 
- * If the ChipCommon revision does not provide the number of
- * attached cores, the `ncores` value will be set to 0.
- * 
  * @param idreg The CHIPC_ID register value.
  * @param enum_addr The enumeration address to include in the result.
+ *
+ * @warning
+ * On early siba(4) devices, the ChipCommon core does not provide
+ * a valid CHIPC_ID_NUMCORE field. On these ChipCommon revisions
+ * (see CHIPC_NCORES_MIN_HWREV()), this function will parse and return
+ * an invalid `ncores` value.
  */
 struct bhnd_chipid
 bhnd_parse_chipid(uint32_t idreg, bhnd_addr_t enum_addr)
@@ -547,12 +550,7 @@ bhnd_parse_chipid(uint32_t idreg, bhnd_addr_t enum_addr)
 	result.chip_pkg = CHIPC_GET_ATTR(idreg, ID_PKG);
 	result.chip_rev = CHIPC_GET_ATTR(idreg, ID_REV);
 	result.chip_type = CHIPC_GET_ATTR(idreg, ID_BUS);
-
-	if (result.chip_rev < CHIPC_NCORES_MINREV) {
-		result.ncores = CHIPC_GET_ATTR(idreg, ID_NUMCORE);
-	} else {
-		result.ncores = 0;
-	}
+	result.ncores = CHIPC_GET_ATTR(idreg, ID_NUMCORE);
 
 	result.enum_addr = enum_addr;
 
@@ -611,7 +609,7 @@ bhnd_read_chipid(device_t dev, struct resource_spec *rs,
 		result->enum_addr = BHND_DEFAULT_CHIPC_ADDR;
 		break;
 	case BHND_CHIPTYPE_BCMA:
-	case BHND_CHIPTYPE_BCMA_1:
+	case BHND_CHIPTYPE_BCMA_ALT:
 		result->enum_addr = bus_read_4(res, chipc_offset +
 		    CHIPC_EROMPTR);
 		break;
