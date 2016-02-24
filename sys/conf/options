@@ -929,6 +929,9 @@ SND_OLDSTEREO		opt_snd.h
 
 X86BIOS
 
+# Nexus
+NEXUS_DEBUG		opt_platform.h
+
 # Flattened device tree options
 FDT		opt_platform.h
 FDT_DTB_STATIC	opt_platform.h

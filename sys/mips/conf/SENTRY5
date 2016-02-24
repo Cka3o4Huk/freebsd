@@ -32,6 +32,7 @@ hints		"SENTRY5.hints"
 include		"../sentry5/std.sentry5"
 
 options		BOOTVERBOSE
+options 	NEXUS_DEBUG
 
 # sentry5 normally ships with cfe firmware; use the console for now
 options 	CFE
@@ -66,8 +67,8 @@ device		bhndb
 device		bhndsoc			# Broadcom SoC
 #device		siba_nexus		# Sonics Nexus
 
-device		bhnd_pcib		# Broadcom Host-PCI bridge
-device		pci
+#device		bhnd_pcib		# Broadcom Host-PCI bridge
+#device		pci
 
 device		mdio
 

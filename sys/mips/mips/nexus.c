@@ -60,7 +60,6 @@ __FBSDID("$FreeBSD$");
 
 #include "opt_platform.h"
 
-#undef NEXUS_DEBUG
 #ifdef NEXUS_DEBUG
 #define dprintf printf
 #else 
@@ -283,12 +282,15 @@ nexus_alloc_resource(device_t bus, device_t child, int type, int *rid,
 		return (0);
 	}
 
+	dprintf("%s: reserve resource as %p-%p (%ld)\n", __func__, (void *)(intptr_t)start, (void *)(intptr_t)end, count);
 	rv = rman_reserve_resource(rm, start, end, count, flags, child);
 	if (rv == 0) {
 		printf("%s: could not reserve resource for %s\n", __func__,
 		    device_get_nameunit(child));
 		return (0);
 	}
+
+	dprintf("%s: reserved resource as 0x%p\n", __func__, (void *)rv->r_bushandle);
 
 	rman_set_rid(rv, *rid);
 

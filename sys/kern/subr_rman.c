@@ -99,7 +99,7 @@ struct resource_i {
 	int	r_rid;		/* optional rid for this resource. */
 };
 
-static int rman_debug = 0;
+static int rman_debug = 1;
 SYSCTL_INT(_debug, OID_AUTO, rman_debug, CTLFLAG_RWTUN,
     &rman_debug, 0, "rman debug");
 
