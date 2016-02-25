@@ -60,15 +60,18 @@ options 	INVARIANT_SUPPORT
 options 	BUS_DEBUG
 makeoptions	BUS_DEBUG
 
-device		bhnd			# Broadcom Backplane
-device		bcma			# Broadcom Sonics Backplane Support
+#device		pci
+
+device		bhndsoc			# Broadcom SoC
 device		bhndbus
 device		bhndb
-device		bhndsoc			# Broadcom SoC
+device		bhnd			# Broadcom Backplane
+device		bcma			# Broadcom Sonics Backplane Support
+#device		bhnd_pcib		# Broadcom Host-PCI bridge
+
 #device		siba_nexus		# Sonics Nexus
 
-#device		bhnd_pcib		# Broadcom Host-PCI bridge
-#device		pci
+
 
 device		mdio
 

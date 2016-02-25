@@ -1132,6 +1132,7 @@ dev/bhnd/siba/siba_bhndb.c		optional bhndbus | siba bhndb
 dev/bhnd/siba/siba_nexus.c		optional siba_nexus siba
 dev/bhnd/siba/siba_subr.c		optional bhndbus | siba
 dev/bhnd/soc/bhnd_soc.c			optional bhndsoc
+dev/bhnd/soc/bhnd_soc_cfg.c		optional bhndsoc
 #
 dev/bktr/bktr_audio.c		optional bktr pci
 dev/bktr/bktr_card.c		optional bktr pci
