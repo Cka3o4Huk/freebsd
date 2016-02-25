@@ -53,7 +53,7 @@ const struct bhndb_hwcfg bhnd_soc_bcma_generic_hwcfg = {
 	},
 };
 
-const struct bhndb_hw bhndb_pci_generic_hw_table[] = {
+const struct bhndb_hw bhnd_soc_generic_hw_table[] = {
 	/* SoC WLAN */
 	{
 		.name = "Asus RT-N16 SoC WLAN",

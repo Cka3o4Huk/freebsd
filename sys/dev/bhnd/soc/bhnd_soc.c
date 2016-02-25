@@ -23,7 +23,7 @@
  * **************************** VARIABLES ****************************
  */
 
-extern const struct bhndb_hw bhndb_pci_generic_hw_table[];
+extern const struct bhndb_hw bhnd_soc_generic_hw_table[];
 extern const struct bhndb_hwcfg bhnd_soc_bcma_generic_hwcfg;
 
 int attachment_mode = SOC_TO_BRIDGE;
@@ -81,7 +81,7 @@ static const struct bhndb_hwcfg * bhnd_soc_get_generic_hwcfg(device_t dev, devic
 }
 
 static const struct bhndb_hw * 		  bhnd_soc_get_bhndb_hwtable(device_t dev, device_t child){
-	return bhndb_pci_generic_hw_table;
+	return bhnd_soc_generic_hw_table;
 }
 
 static bool bhnd_soc_is_core_disabled(device_t dev, device_t child, struct bhnd_core_info *core){

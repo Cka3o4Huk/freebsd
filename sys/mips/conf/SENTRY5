@@ -31,8 +31,8 @@ ident		SENTRY5
 hints		"SENTRY5.hints"
 include		"../sentry5/std.sentry5"
 
-options		BOOTVERBOSE
-options 	NEXUS_DEBUG
+#options		BOOTVERBOSE
+#options 	NEXUS_DEBUG
 
 # sentry5 normally ships with cfe firmware; use the console for now
 options 	CFE
@@ -57,17 +57,17 @@ options 	_KPOSIX_PRIORITY_SCHEDULING #Posix P1003_1B real-time extensions
 options 	INVARIANTS
 options 	INVARIANT_SUPPORT
 
-options 	BUS_DEBUG
-makeoptions	BUS_DEBUG
+#options 	BUS_DEBUG
+#makeoptions	BUS_DEBUG
 
-#device		pci
+device		pci
 
 device		bhndsoc			# Broadcom SoC
 device		bhndbus
 device		bhndb
 device		bhnd			# Broadcom Backplane
 device		bcma			# Broadcom Sonics Backplane Support
-#device		bhnd_pcib		# Broadcom Host-PCI bridge
+device		bhnd_pcib		# Broadcom Host-PCI bridge
 
 #device		siba_nexus		# Sonics Nexus
 
