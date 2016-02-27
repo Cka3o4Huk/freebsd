@@ -31,7 +31,7 @@ ident		SENTRY5
 hints		"SENTRY5.hints"
 include		"../sentry5/std.sentry5"
 
-#options		BOOTVERBOSE
+#options	BOOTVERBOSE
 #options 	NEXUS_DEBUG
 
 # sentry5 normally ships with cfe firmware; use the console for now
@@ -64,7 +64,7 @@ device		pci
 
 device		bhndsoc			# Broadcom SoC
 device		bhndbus
-device		bhndb
+device		bhndb			# Broadcom bridge
 device		bhnd			# Broadcom Backplane
 device		bcma			# Broadcom Sonics Backplane Support
 device		bhnd_pcib		# Broadcom Host-PCI bridge
