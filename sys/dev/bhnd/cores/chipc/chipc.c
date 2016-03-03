@@ -151,6 +151,7 @@ chipc_attach(device_t dev)
 	/* Fetch capability and status register values */
 	sc->caps = bhnd_bus_read_4(sc->core, CHIPC_CAPABILITIES);
 	sc->cst = bhnd_bus_read_4(sc->core, CHIPC_CHIPST);
+	sc->flash_cfg = bhnd_bus_read_4(sc->core, CHIPC_FLASH_CFG);
 
 	// TODO
 	switch (bhnd_chipc_nvram_src(dev)) {
@@ -169,6 +170,21 @@ chipc_attach(device_t dev)
 	case BHND_NVRAM_SRC_NONE:
 		device_printf(dev, "NVRAM source: NONE\n");
 		break;
+	}
+
+	//Flash
+	if(CHIPC_CAP(sc, CAP_FLASH_MASK) == CHIPC_PFLASH){
+		error = chipc_init_pflash(dev, sc->flash_cfg);
+		if(error > 0){
+			device_printf(dev,"init_flash_failed with: %d\n", error);
+			goto cleanup;
+		}
+	}
+
+	error = bus_generic_attach(dev);
+	if(error > 0){
+		device_printf(dev, "bus_gener_attach failed: %d\n", error);
+		goto cleanup;
 	}
 
 	return (0);
@@ -290,6 +306,13 @@ chipc_nvram_src(device_t dev)
 	return (BHND_NVRAM_SRC_NONE);
 }
 
+static struct resource_list *
+chipc_get_resource_list(device_t dev, device_t child)
+{
+	struct chipc_devinfo *dinfo = device_get_ivars(child);
+	return (&dinfo->resources);
+}
+
 static device_method_t chipc_methods[] = {
 	/* Device interface */
 	DEVMETHOD(device_probe,		chipc_probe),
@@ -297,9 +320,21 @@ static device_method_t chipc_methods[] = {
 	DEVMETHOD(device_detach,	chipc_detach),
 	DEVMETHOD(device_suspend,	chipc_suspend),
 	DEVMETHOD(device_resume,	chipc_resume),
+
+	/* Bus interface */
+	DEVMETHOD(bus_get_resource, 		bus_generic_rl_get_resource),
+	DEVMETHOD(bus_set_resource, 		bus_generic_rl_set_resource),
+	DEVMETHOD(bus_delete_resource,		bus_generic_rl_delete_resource),
+	DEVMETHOD(bus_alloc_resource, 	 	bus_generic_rl_alloc_resource),
+	DEVMETHOD(bus_release_resource,		bus_generic_rl_release_resource),
+
+	DEVMETHOD(bus_activate_resource, 	bus_generic_activate_resource),
+	DEVMETHOD(bus_deactivate_resource, 	bus_generic_deactivate_resource),
+	DEVMETHOD(bus_get_resource_list,	chipc_get_resource_list),
 	
 	/* ChipCommon interface */
 	DEVMETHOD(bhnd_chipc_nvram_src,	chipc_nvram_src),
+
 
 	DEVMETHOD_END
 };
