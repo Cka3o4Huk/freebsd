@@ -674,6 +674,10 @@ static device_method_t bhnd_methods[] = {
 
 	/* BHND interface */
 	DEVMETHOD(bhnd_bus_get_chipid,		bhnd_bus_generic_get_chipid),
+	DEVMETHOD(bhnd_bus_alloc_resource,	bhnd_generic_alloc_bhnd_resource),
+	DEVMETHOD(bhnd_bus_release_resource,	bhnd_generic_release_bhnd_resource),
+	DEVMETHOD(bhnd_bus_activate_resource,	bhnd_generic_activate_bhnd_resource),
+	DEVMETHOD(bhnd_bus_deactivate_resource,	bhnd_generic_deactivate_bhnd_resource),
 	DEVMETHOD(bhnd_bus_get_probe_order,	bhnd_generic_get_probe_order),
 	DEVMETHOD(bhnd_bus_is_region_valid,	bhnd_generic_is_region_valid),
 	DEVMETHOD(bhnd_bus_is_hostb_device,	bhnd_bus_generic_is_hostb_device),
