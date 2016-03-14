@@ -151,7 +151,6 @@ chipc_attach(device_t dev)
 	/* Fetch capability and status register values */
 	sc->caps = bhnd_bus_read_4(sc->core, CHIPC_CAPABILITIES);
 	sc->cst = bhnd_bus_read_4(sc->core, CHIPC_CHIPST);
-	sc->flash_cfg = bhnd_bus_read_4(sc->core, CHIPC_FLASH_CFG);
 
 	// TODO
 	switch (bhnd_chipc_nvram_src(dev)) {
@@ -174,6 +173,7 @@ chipc_attach(device_t dev)
 
 	//Flash
 	if(CHIPC_CAP(sc, CAP_FLASH_MASK) == CHIPC_PFLASH){
+		sc->flash_cfg = bhnd_bus_read_4(sc->core, CHIPC_FLASH_CFG);
 		error = chipc_init_pflash(dev, sc->flash_cfg);
 		if(error > 0){
 			device_printf(dev,"init_flash_failed with: %d\n", error);
