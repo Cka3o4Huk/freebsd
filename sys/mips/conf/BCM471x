@@ -114,4 +114,5 @@ device 		miibus			# attachments
 
 device		loop
 device		ether
+device 		random
 device		md
