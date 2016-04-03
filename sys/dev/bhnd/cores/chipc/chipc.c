@@ -52,13 +52,14 @@ __FBSDID("$FreeBSD$");
 
 #include <dev/bhnd/bhnd.h>
 
+#include "chipc.h"
 #include "chipcreg.h"
 #include "chipcvar.h"
 
 devclass_t bhnd_chipc_devclass;	/**< bhnd(4) chipcommon device class */
 
 static const struct resource_spec chipc_rspec[CHIPC_MAX_RSPEC] = {
-	{ SYS_RES_MEMORY,	0,	RF_ACTIVE },
+	{ SYS_RES_MEMORY,	0,	RF_ACTIVE | RF_SHAREABLE},
 	{ -1, -1, 0 }
 };
 
@@ -126,6 +127,7 @@ chipc_attach(device_t dev)
 		return (error);
 
 	sc->core = sc->res[0];
+	sc->core_start = rman_get_start(sc->core->res);
 	
 	/* Fetch our chipset identification data */
 	ccid_reg = bhnd_bus_read_4(sc->core, CHIPC_ID);
@@ -152,6 +154,17 @@ chipc_attach(device_t dev)
 	sc->caps = bhnd_bus_read_4(sc->core, CHIPC_CAPABILITIES);
 	sc->cst = bhnd_bus_read_4(sc->core, CHIPC_CHIPST);
 
+	chipc_parse_capabilities(&sc->capabilities, sc->caps);
+	if(bootverbose)
+		chipc_print_capacilities(&sc->capabilities);
+
+	/* Populate the set of applicable quirk flags */
+	sc->quirks = 0;
+	for (dq = chipc_quirks; dq->quirks != 0; dq++) {
+		if (bhnd_hwrev_matches(bhnd_get_hwrev(dev), &dq->hwrev))
+			sc->quirks |= dq->quirks;
+	};
+
 	// TODO
 	switch (bhnd_chipc_nvram_src(dev)) {
 	case BHND_NVRAM_SRC_CIS:
@@ -171,7 +184,7 @@ chipc_attach(device_t dev)
 		break;
 	}
 
-	int flash_type = CHIPC_CAP(sc, CAP_FLASH_MASK);
+	int flash_type = sc->capabilities.flash_type;
 	//Parallel Flash
 	switch(flash_type){
 	case CHIPC_PFLASH:
@@ -192,6 +205,12 @@ chipc_attach(device_t dev)
 
 	if(error > 0){
 		device_printf(dev,"init_flash_failed with: %d\n", error);
+		goto cleanup;
+	}
+
+	int uarts = sc->capabilities.num_uarts;
+	if (uarts > 0 && (error = chipc_init_uarts(sc, uarts)) > 0){
+		device_printf(dev,"init_uarts failed with: %d\n", error);
 		goto cleanup;
 	}
 

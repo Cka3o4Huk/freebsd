@@ -37,6 +37,7 @@
 #include <sys/rman.h>
 
 #include "bhnd_chipc_if.h"
+#include "chipcvar.h"
 
 /**
  * Query a ChipCommon device and return the preferred NVRAM data source.
@@ -51,5 +52,8 @@ bhnd_chipc_nvram_src(device_t dev)
 
 int chipc_init_pflash(device_t dev, uint32_t flash_config);
 int chipc_init_sflash(device_t dev, char* flash_name);
+int chipc_init_uarts(struct chipc_softc* sc, int num_uarts);
+void chipc_parse_capabilities(struct chipc_capabilities* capabilities, u_int32_t caps);
+void chipc_print_capacilities(struct chipc_capabilities* capabilities);
 
 #endif /* _BHND_CORES_CHIPC_CHIPC_H_ */
