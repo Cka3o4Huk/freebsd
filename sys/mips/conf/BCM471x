@@ -110,7 +110,7 @@ device 		miibus			# attachments
 
 
 # XXX notyet; need to be auto probed children of siba_cc.
-#device		uart
+device		uart
 
 device		loop
 device		ether

@@ -14,6 +14,7 @@
 
 #include <machine/resource.h>
 #include <dev/bhnd/bhndvar.h>
+#include <dev/bhnd/bhnd_debug.h>
 
 #include "bus_if.h"
 #include "chipc.h"
@@ -21,6 +22,20 @@
 #include "chipcreg.h"
 
 int chipc_init_flash_resources(device_t dev, struct chipc_devinfo** devinfo);
+int chipc_init_uart_resources(struct chipc_softc* sc, struct chipc_devinfo** devinfo, int uart_index);
+int chipc_alloc_devinfo(device_t dev, struct chipc_devinfo** devinfo);
+
+int chipc_alloc_devinfo(device_t dev, struct chipc_devinfo** devinfo){
+	*devinfo = malloc(sizeof(struct chipc_devinfo*), M_BHND, M_NOWAIT);
+
+	if (*devinfo == NULL){
+		device_printf(dev, "can't allocate memory for chipc_devinfo\n");
+		return ENOMEM;
+	}
+
+	resource_list_init(&((*devinfo)->resources));
+	return 0;
+}
 
 int chipc_init_flash_resources(device_t dev, struct chipc_devinfo** devinfo){
 	//XXX: region 1 is taken from actual HW configuration...
@@ -31,14 +46,10 @@ int chipc_init_flash_resources(device_t dev, struct chipc_devinfo** devinfo){
 		return ENXIO;
 	}
 
-	*devinfo = malloc(sizeof(struct chipc_devinfo*), M_BHND, M_NOWAIT);
+	int err = chipc_alloc_devinfo(dev, devinfo);
+	if (err)
+		return err;
 
-	if (*devinfo == NULL){
-		device_printf(dev, "can't allocate memory for chipc_devinfo\n");
-		return ENOMEM;
-	}
-
-	resource_list_init(&((*devinfo)->resources));
 	resource_list_add(&((*devinfo)->resources), SYS_RES_MEMORY, 0, rman_get_start(chipc_res->res),
 			rman_get_end(chipc_res->res), 1);
 
@@ -46,7 +57,19 @@ int chipc_init_flash_resources(device_t dev, struct chipc_devinfo** devinfo){
 	return 0;
 }
 
+int chipc_init_uart_resources(struct chipc_softc* sc, struct chipc_devinfo** devinfo, int uart_index){
+	int err = chipc_alloc_devinfo(sc->dev,	devinfo);
+	if (err)
+		return err;
+
+	resource_list_add(&((*devinfo)->resources), SYS_RES_MEMORY, 0,
+			sc->core_start + CHIPC_UART_BASE,
+			sc->core_start + CHIPC_UART_BASE + CHIPC_UART_SIZE, 1);
+	return 0;
+}
+
 int chipc_init_pflash(device_t dev, uint32_t flash_config){
+	//TODO: pass parameters to CFI
 	int width = (flash_config & CHIPC_CF_DS) ? 2 : 1;
 	int enabled = (flash_config & CHIPC_CF_EN);
 	int byteswap = (flash_config & CHIPC_CF_BS);
@@ -117,4 +140,63 @@ int chipc_init_sflash(device_t dev, char* flash_name){
 	}
 
 	return 0;
+}
+
+int chipc_init_uarts(struct chipc_softc* sc, int num_uarts){
+	if (num_uarts < 0)
+		return EINVAL;
+	else if (num_uarts == 0)
+		return 0;
+
+	device_t child = device_add_child(sc->dev, "uart", 0);
+	struct chipc_devinfo* devinfo;
+	int err = chipc_init_uart_resources(sc, &devinfo, 0);
+	if (err)
+		return err;
+
+	device_set_ivars(child,devinfo);
+
+	return 0;
+}
+
+void chipc_print_capacilities(struct chipc_capabilities* capabilities){
+	BHND_DEBUG(("UARTs: 0x%01x", capabilities->num_uarts))
+	BHND_DEBUG(("BigEngian: 0x%01x", capabilities->is_bigend))
+	BHND_DEBUG(("UART-GPIO: 0x%01x", capabilities->uart_gpio))
+	BHND_DEBUG(("UART Clock: 0x%01x", capabilities->uart_clock))
+	BHND_DEBUG(("Flash type: 0x%x", capabilities->flash_type))
+
+	BHND_DEBUG(("External buses: 0x%x",  capabilities->external_buses))
+	BHND_DEBUG(("Power control: 0x%01x", capabilities->power_control))
+	BHND_DEBUG(("JTAG master: 0x%01x", capabilities->jtag_master))
+
+	BHND_DEBUG(("PLL Type: 0x%x", capabilities->pll_type))
+	BHND_DEBUG(("OTP size: 0x%01x", capabilities->otp_size))
+	BHND_DEBUG(("Is 64bit? 0x%01x", capabilities->is_64bit))
+	BHND_DEBUG(("Boot ROM: 0x%01x", capabilities->boot_rom))
+	BHND_DEBUG(("PMU: 0x%01x", capabilities->pmu))
+	BHND_DEBUG(("ECI: 0x%01x", capabilities->eci))
+	BHND_DEBUG(("SPROM: 0x%01x", capabilities->sprom))
+	return;
+}
+
+void chipc_parse_capabilities(struct chipc_capabilities* capabilities, u_int32_t caps){
+	capabilities->num_uarts = GET_BITS(caps, CHIPC_CAP_UARTS);
+	capabilities->is_bigend = GET_BITS(caps, CHIPC_CAP_MIPSEB);
+	capabilities->uart_gpio = GET_BITS(caps, CHIPC_CAP_UARTGPIO);
+	capabilities->uart_clock= GET_BITS(caps, CHIPC_CAP_UCLKSEL);
+	capabilities->flash_type= GET_BITS(caps, CHIPC_CAP_FLASH);
+
+	capabilities->external_buses = GET_BITS(caps, CHIPC_CAP_EXTBUS);
+	capabilities->power_control = GET_BITS(caps, CHIPC_CAP_PWR_CTL);
+	capabilities->jtag_master = GET_BITS(caps, CHIPC_CAP_JTAGP);
+
+	capabilities->pll_type = GET_BITS(caps, CHIPC_CAP_PLL);
+	capabilities->otp_size = GET_BITS(caps, CHIPC_CAP_OTP_SIZE);
+	capabilities->is_64bit = GET_BITS(caps, CHIPC_CAP_BKPLN64);
+	capabilities->boot_rom = GET_BITS(caps, CHIPC_CAP_ROM);
+	capabilities->pmu = GET_BITS(caps, CHIPC_CAP_PMU);
+	capabilities->eci = GET_BITS(caps, CHIPC_CAP_ECI);
+	capabilities->sprom = GET_BITS(caps, CHIPC_CAP_SPROM);
+	return;
 }
