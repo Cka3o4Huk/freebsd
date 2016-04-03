@@ -86,6 +86,14 @@ static int chipc_spi_trx_slicer(device_t dev, struct flash_slice *slices, int *n
 			uint32_t fs_ofs = bus_space_read_4(sc->sc_tag, sc->sc_handle, ofs + 24);
 			device_printf(dev, "FS offset: %x\n", fs_ofs);
 
+			/*
+			 * GEOM IO will panic if offset is not aligned on sector size, i.e. 512 bytes
+			 */
+			if(fs_ofs % 0x200 != 0){
+				device_printf(dev, "WARNING! filesystem offset should be aligned on sector size (%d bytes)\n", 0x200);
+				break;
+			}
+
 			slices[*nslices].base = ofs + fs_ofs;
 			//XXX: fully sized? any other partition?
 			uint32_t fw_len = bus_space_read_4(sc->sc_tag, sc->sc_handle, ofs + 4);
