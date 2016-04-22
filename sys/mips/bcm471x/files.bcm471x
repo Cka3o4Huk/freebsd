@@ -9,3 +9,7 @@ mips/mips/tick.c			standard
 mips/mips/mips_pic.c			standard
 kern/subr_intr.c			standard
 kern/pic_if.m				standard
+
+mips/bcm471x/uart_cpu_chipc.c		optional uart
+mips/bcm471x/uart_bus_chipc.c		optional uart
+mips/bcm471x/bcm_socinfo.c		standard

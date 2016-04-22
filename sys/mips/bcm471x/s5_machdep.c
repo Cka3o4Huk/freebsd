@@ -70,12 +70,13 @@ __FBSDID("$FreeBSD$");
 #include <machine/vmparam.h>
 
 #include <mips/sentry5/s5reg.h>
+#include "bcm_socinfo.h"
 
 #ifdef CFE
 #include <dev/cfe/cfe_api.h>
 #endif
 
-#define S5_TRACE 1
+//#define BROADCOM_TRACE 0
 
 extern int *edata;
 extern int *end;
@@ -93,10 +94,6 @@ mips_init(void)
 
 	printf("entry: mips_init()\n");
 
-#ifdef S5_TRACE
-	boothowto |= RB_VERBOSE;
-#endif
-
 #ifdef CFE
 	/*
 	 * Query DRAM memory map from CFE.
@@ -108,14 +105,14 @@ mips_init(void)
 
 		result = cfe_enummem(i / 2, 0, &addr, &len, &type);
 		if (result < 0) {
-#ifdef S5_TRACE
+#ifdef BROADCOM_TRACE
 			printf("There is no phys memory for: %d\n", i);
 #endif
 			phys_avail[i] = phys_avail[i + 1] = 0;
 			break;
 		}
 		if (type != CFE_MI_AVAILABLE){
-#ifdef S5_TRACE
+#ifdef BROADCOM_TRACE
 			printf("phys memory is not available: %d\n", i);
 #endif
 			continue;
@@ -130,7 +127,7 @@ mips_init(void)
 			 */
 			phys_avail[i] += MIPS_KSEG0_TO_PHYS(kernel_kseg0_end);
 		}
-#ifdef S5_TRACE
+#ifdef BROADCOM_TRACE
 		printf("phys memory is available for: %d\n", i);
 		printf(" => addr =  %jx\n", addr);
 		printf(" => len =  %jd\n", len);
@@ -139,7 +136,7 @@ mips_init(void)
 		physmem += len;
 	}
 
-#ifdef S5_TRACE
+#ifdef BROADCOM_TRACE
 	printf("Total phys memory is : %ld\n", physmem);
 #endif
 
@@ -191,7 +188,10 @@ platform_start(__register_t a0, __register_t a1, __register_t a2,
 	/* Initialize pcpu stuff */
 	mips_pcpu0_init();
 
-	platform_counter_freq = 480 * 1000 * 1000;
+	struct bcm_socinfo* socinfo;
+	bcm_get_socinfo(&socinfo);
+	platform_counter_freq = socinfo->cpurate * 1000 * 1000; /* BCM4718 is 480MHz */
+
 	mips_timer_early_init(platform_counter_freq);
 
 #ifdef CFE
@@ -210,39 +210,6 @@ platform_start(__register_t a0, __register_t a1, __register_t a2,
 	cninit();
 
 	mips_init();
-
-# if 0
-	/*
-	 * Probe the Broadcom Sentry5's on-chip PLL clock registers
-	 * and discover the CPU pipeline clock and bus clock
-	 * multipliers from this.
-	 * XXX: Wrong place. You have to ask the ChipCommon
-	 * or External Interface cores on the SiBa.
-	 */
-	uint32_t busmult, cpumult, refclock, clkcfg1;
-#define S5_CLKCFG1_REFCLOCK_MASK	0x0000001F
-#define S5_CLKCFG1_BUSMULT_MASK		0x000003E0
-#define S5_CLKCFG1_BUSMULT_SHIFT	5
-#define S5_CLKCFG1_CPUMULT_MASK		0xFFFFFC00
-#define S5_CLKCFG1_CPUMULT_SHIFT	10
-
-	counter_freq = 100000000;	/* XXX */
-
-	clkcfg1 = s5_rd_clkcfg1();
-	printf("clkcfg1 = 0x%08x\n", clkcfg1);
-
-	refclock = clkcfg1 & 0x1F;
-	busmult = ((clkcfg1 & 0x000003E0) >> 5) + 1;
-	cpumult = ((clkcfg1 & 0xFFFFFC00) >> 10) + 1;
-
-	printf("refclock = %u\n", refclock);
-	printf("busmult = %u\n", busmult);
-	printf("cpumult = %u\n", cpumult);
-
-	counter_freq = cpumult * refclock;
-# else
-	platform_counter_freq = 500 * 1000 * 1000; /* BCM4718 is 500MHz */
-# endif
 
 	/* BCM471x timer is 1/2 of Clk */
 	mips_timer_init_params(platform_counter_freq, 1);
