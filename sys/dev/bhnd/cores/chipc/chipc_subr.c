@@ -37,6 +37,12 @@ int chipc_alloc_devinfo(device_t dev, struct chipc_devinfo** devinfo){
 	return 0;
 }
 
+
+/*
+ * There are 2 flash resources:
+ *  - resource ID (rid) = 0. This is memory-mapped flash memory
+ *  - resource ID (rid) = 1. This is memory-mapped flash registers (for instance for SPI)
+ */
 int chipc_init_flash_resources(device_t dev, struct chipc_devinfo** devinfo){
 	//XXX: region 1 is taken from actual HW configuration...
 	int chipc_rid = bhnd_get_port_rid(dev, BHND_PORT_DEVICE, 1, 1);
@@ -54,6 +60,15 @@ int chipc_init_flash_resources(device_t dev, struct chipc_devinfo** devinfo){
 			rman_get_end(chipc_res->res), 1);
 
 	bhnd_release_resource(dev, SYS_RES_MEMORY, chipc_rid, chipc_res);
+
+	/*
+	 * Flash registers
+	 */
+	struct chipc_softc* sc = device_get_softc(dev);
+	resource_list_add(&((*devinfo)->resources), SYS_RES_MEMORY, 1,
+			sc->core_start + CHIPC_FLASHBASE,
+			sc->core_start + CHIPC_FLASHBASE + CHIPC_FLASHREGSZ, 1);
+
 	return 0;
 }
 
@@ -65,6 +80,10 @@ int chipc_init_uart_resources(struct chipc_softc* sc, struct chipc_devinfo** dev
 	resource_list_add(&((*devinfo)->resources), SYS_RES_MEMORY, 0,
 			sc->core_start + CHIPC_UART_BASE,
 			sc->core_start + CHIPC_UART_BASE + CHIPC_UART_SIZE, 1);
+
+	//int irq = 2; // TODO: fetch shareable IRQ from ChipCommon
+
+	resource_list_add(&((*devinfo)->resources), SYS_RES_IRQ, 0, 2, 2, 1);
 	return 0;
 }
 

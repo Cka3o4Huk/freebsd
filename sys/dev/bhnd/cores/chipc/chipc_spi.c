@@ -115,31 +115,18 @@ static int chipc_spi_probe(device_t dev){
 }
 
 static int chipc_spi_attach(device_t dev){
-	device_t chipcommon = device_get_parent(dev);
 	struct chipc_spi_softc* sc = device_get_softc(dev);
-	struct chipc_softc* parent_sc = device_get_softc(chipcommon);
-
-	if (!parent_sc) {
-		BHND_ERROR_DEV(dev, ("no found chipcommon's softc"));
-		return (ENXIO);
-	}
-
-	if(!(parent_sc->core)) {
-		BHND_ERROR_DEV(dev, ("no found main BHND resource of chipcommon's softc"));
-		return (ENXIO);
-	}
-
-	if(!(parent_sc->core->res)) {
-		BHND_ERROR_DEV(dev, ("no found main resource of chipcommon's softc"));
-		return (ENXIO);
-	}
-
-	sc->sc_mem_res = parent_sc->core->res;
 
 	sc->sc_rid = 0;
 	sc->sc_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &sc->sc_rid,
 	    RF_ACTIVE);
 	if (sc->sc_res == NULL)
+		return (ENXIO);
+
+	sc->sc_mem_rid = 1;
+	sc->sc_mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &sc->sc_mem_rid,
+	    RF_ACTIVE);
+	if (sc->sc_mem_res == NULL)
 		return (ENXIO);
 
 	sc->sc_tag = rman_get_bustag(sc->sc_res);
@@ -155,7 +142,7 @@ static int chipc_spi_wait(struct chipc_spi_softc *sc) {
 	int i = CHIPC_SPI_MAXTRIES;
 
 	while (i--)
-		if (!(SPI_READ(sc, CHIPC_FLASHCTL) & CHIPC_FLASHCTL_START))
+		if (!(SPI_READ(sc, CHIPC_SPI_FLASHCTL) & CHIPC_SPI_FLASHCTL_START))
 			break;
 
 	if (i != 0)
@@ -166,15 +153,15 @@ static int chipc_spi_wait(struct chipc_spi_softc *sc) {
 }
 
 static int chipc_spi_txrx(struct chipc_spi_softc *sc, uint8_t out, uint8_t* in) {
-	uint32_t ctl = CHIPC_FLASHCTL_START | CHIPC_FLASHCTL_CSACTIVE | out;
+	uint32_t ctl = CHIPC_SPI_FLASHCTL_START | CHIPC_SPI_FLASHCTL_CSACTIVE | out;
 	SPI_BARRIER_WRITE(sc);
-	SPI_WRITE(sc, CHIPC_FLASHCTL, ctl);
+	SPI_WRITE(sc, CHIPC_SPI_FLASHCTL, ctl);
 	SPI_BARRIER_WRITE(sc);
 
 	if (chipc_spi_wait(sc))
 		return (-1);
 
-	*in = SPI_READ(sc, CHIPC_FLASHDATA) & 0xff;
+	*in = SPI_READ(sc, CHIPC_SPI_FLASHDATA) & 0xff;
 	return (0);
 }
 
@@ -182,8 +169,6 @@ static int chipc_spi_transfer(device_t dev, device_t child, struct spi_command *
 	struct chipc_spi_softc *sc = device_get_softc(dev);
 	uint8_t *buf_in, *buf_out;
 	int i;
-
-	//ar71xx_spi_chip_activate(sc, devi->cs);
 
 	KASSERT(cmd->tx_cmd_sz == cmd->rx_cmd_sz,
 	    ("TX/RX command sizes should be equal"));
@@ -196,13 +181,12 @@ static int chipc_spi_transfer(device_t dev, device_t child, struct spi_command *
 	}
 
 	SPI_BARRIER_WRITE(sc);
-	SPI_WRITE(sc, CHIPC_FLASHADDR, 0);
+	SPI_WRITE(sc, CHIPC_SPI_FLASHADDR, 0);
 	SPI_BARRIER_WRITE(sc);
 
 	/*
 	 * Transfer command
 	 */
-
 	buf_out = (uint8_t *)cmd->tx_cmd;
 	buf_in = (uint8_t *)cmd->rx_cmd;
 	for (i = 0; i < cmd->tx_cmd_sz; i++)
@@ -222,7 +206,7 @@ static int chipc_spi_transfer(device_t dev, device_t child, struct spi_command *
 	 * Clear CS bit and whole control register
 	 */
 	SPI_BARRIER_WRITE(sc);
-	SPI_WRITE(sc, CHIPC_FLASHCTL, 0);
+	SPI_WRITE(sc, CHIPC_SPI_FLASHCTL, 0);
 	SPI_BARRIER_WRITE(sc);
 
 	return (0);

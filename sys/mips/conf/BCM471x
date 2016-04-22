@@ -34,7 +34,7 @@ options 	CFE
 options 	CFE_CONSOLE
 options 	ALT_BREAK_TO_DEBUGGER
 options 	BREAK_TO_DEBUGGER
-options		BOOTVERBOSE=1
+options		BOOTVERBOSE=0
 
 makeoptions	MIPS_INTRNG
 options		MIPS_INTRNG
@@ -60,6 +60,7 @@ options         UFS_DIRHASH             #Improve performance on big directories
 device		geom_uzip
 options		GEOM_UZIP
 options		GEOM_LABEL		# Providers labelization.
+options		ROOTDEVNAME=\"ufs:ufs/FBSD\"
 
 # Debugging for use in -current
 #options 	DEADLKRES

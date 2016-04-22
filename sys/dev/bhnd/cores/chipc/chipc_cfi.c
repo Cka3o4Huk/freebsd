@@ -36,6 +36,8 @@ chipc_cfi_probe(device_t dev)
 	struct cfi_softc *sc = device_get_softc(dev);
 	sc->sc_width = 2;
 	int error = cfi_probe(dev);
+	if (!error)
+		device_set_desc(dev, "ChipCommon CFI");
 	return (error);
 }
 
