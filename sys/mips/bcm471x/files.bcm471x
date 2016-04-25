@@ -13,3 +13,32 @@ kern/pic_if.m				standard
 mips/bcm471x/uart_cpu_chipc.c		optional uart
 mips/bcm471x/uart_bus_chipc.c		optional uart
 mips/bcm471x/bcm_socinfo.c		standard
+
+#
+dev/bhnd/bhnd.c				standard
+dev/bhnd/bhnd_subr.c			standard
+dev/bhnd/bhnd_bus_if.m			standard
+dev/bhnd/bcma/bcma.c			standard
+dev/bhnd/bcma/bcma_nexus.c		standard
+dev/bhnd/bcma/bcma_bhndb.c		standard
+dev/bhnd/bcma/bcma_erom.c		standard
+dev/bhnd/bcma/bcma_subr.c		standard
+dev/bhnd/cores/bgmac/bgmac.c		optional bgmac 
+dev/bhnd/cores/chipc/chipc_subr.c	standard
+dev/bhnd/cores/chipc/chipc_cfi.c	optional cfi 
+dev/bhnd/cores/chipc/chipc_spi.c	optional spibus 
+dev/bhnd/cores/chipc/chipc.c		standard
+dev/bhnd/cores/chipc/bhnd_chipc_if.m	standard
+dev/bhnd/cores/mips/mipscore.c		standard
+dev/bhnd/cores/pci/mdio_pcie.c		optional pci
+dev/bhnd/cores/pci/bhnd_pci.c		optional pci 
+dev/bhnd/cores/pci/bhnd_pcib.c		optional bhnd_pcib pci
+dev/bhnd/cores/pci/bhnd_pci_hostb.c	optional bhndb pci
+dev/bhnd/nvram/bhnd_nvram_if.m		standard
+dev/bhnd/siba/siba.c			standard
+dev/bhnd/siba/siba_bhndb.c		standard
+dev/bhnd/siba/siba_nexus.c		standard
+dev/bhnd/siba/siba_subr.c		standard
+dev/bhnd/soc/bhnd_soc.c			standard
+dev/bhnd/soc/bhnd_soc_cfg.c		standard
+#

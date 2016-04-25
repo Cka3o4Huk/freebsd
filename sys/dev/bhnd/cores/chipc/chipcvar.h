@@ -106,8 +106,8 @@ struct chipc_softc {
 	struct bhnd_resource	*res[CHIPC_MAX_RES];
 
 	struct bhnd_resource	*core;		/**< core registers. */
+	struct bhnd_chipid	 ccid;		/**< chip identification */
 	rman_res_t 		core_start;
-	struct bhnd_chipid	 	ccid;		/**< chip identification */
 	uint32_t		 quirks;	/**< CHIPC_QUIRK_* quirk flags */
 	uint32_t		 caps;		/**< CHIPC_CAP_* capability register flags */
 	uint32_t		 cst;		/**< CHIPC_CST* status register flags */
@@ -115,26 +115,8 @@ struct chipc_softc {
 	struct chipc_capabilities capabilities;
 };
 
-struct chipc_devinfo{
+struct chipc_devinfo {
 	struct resource_list resources;
 };
-
-//struct chipc_capabilities{
-//	u_int8_t num_uarts:BCMA_CC_CAP_NUM_UART_BASE;
-//	u_int8_t is_bigend:BCMA_CC_CAP_BIG_ENDIAN_BASE;
-//	u_int8_t uart_clock:BCMA_CC_CAP_UART_CLOCK_BASE;
-//	u_int8_t uart_gpio:BCMA_CC_CAP_UART_GPIO_BASE;
-//	u_int8_t external_buses:BCMA_CC_CAP_EXTERNAL_BUSES_BASE;
-//	u_int8_t flash_type:BCMA_CC_CAP_FLASH_TYPE_BASE;
-//	u_int8_t pll_type:BCMA_CC_CAP_PLL_TYPE_BASE;
-//	u_int8_t power_control:BCMA_CC_CAP_POWER_CONTROL_BASE;
-//	u_int8_t otp_size:BCMA_CC_CAP_OTP_SIZE_BASE;
-//	u_int8_t jtag_master:BCMA_CC_CAP_JTAG_MASTER_BASE;
-//	u_int8_t boot_rom:BCMA_CC_CAP_BOOT_ROM_BASE;
-//	u_int8_t is_64bit:BCMA_CC_CAP_64BIT_BASE;
-//	u_int8_t pmu:BCMA_CC_CAP_PMU_BASE;
-//	u_int8_t eci:BCMA_CC_CAP_ECI_BASE;
-//	u_int8_t sprom:BCMA_CC_CAP_SPROM_BASE;
-//};
 
 #endif /* _BHND_CORES_CHIPC_CHIPCVAR_H_ */
