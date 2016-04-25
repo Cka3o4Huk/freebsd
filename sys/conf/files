@@ -2992,7 +2992,7 @@ geom/geom_disk.c		standard
 geom/geom_dump.c		standard
 geom/geom_event.c		standard
 geom/geom_fox.c			optional geom_fox
-geom/geom_flashmap.c		optional fdt cfi | fdt nand | fdt mx25l | bhnd cfi | bhndbus cfi | bhndbus mx25l
+geom/geom_flashmap.c		optional fdt cfi | fdt nand | fdt mx25l
 geom/geom_io.c			standard
 geom/geom_kern.c		standard
 geom/geom_map.c			optional geom_map

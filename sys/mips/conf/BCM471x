@@ -39,7 +39,7 @@ options		BOOTVERBOSE=0
 makeoptions	INTRNG
 options		INTRNG
 
-makeoptions	DEBUG="-g3 -DMIPS_INTRNG -DSTOP_IN_PIC"		#Build kernel with gdb(1) debug symbols
+makeoptions	DEBUG="-g3"		#Build kernel with gdb(1) debug symbols
 makeoptions	MODULES_OVERRIDE=""
 
 options 	DDB
