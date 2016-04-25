@@ -36,8 +36,8 @@ options 	ALT_BREAK_TO_DEBUGGER
 options 	BREAK_TO_DEBUGGER
 options		BOOTVERBOSE=0
 
-makeoptions	MIPS_INTRNG
-options		MIPS_INTRNG
+makeoptions	INTRNG
+options		INTRNG
 
 makeoptions	DEBUG="-g3 -DMIPS_INTRNG -DSTOP_IN_PIC"		#Build kernel with gdb(1) debug symbols
 makeoptions	MODULES_OVERRIDE=""
@@ -74,11 +74,6 @@ options 	INVARIANT_SUPPORT
 
 device		pci
 
-device		bhndsoc			# Broadcom SoC
-device		bhndbus			#
-device		bhndb			# Broadcom bridge
-device		bcma			#
-device 		bhnd_pcib		# Broadcom Host-PCI bridge
 device		bgmac			# Broadcom GMAC
 
 device		mdio

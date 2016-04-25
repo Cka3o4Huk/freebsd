@@ -62,10 +62,8 @@
 #define	CHIPC_JTAGIR			0x34
 #define	CHIPC_JTAGDR			0x38
 #define	CHIPC_JTAGCTRL			0x3c
-
 #define CHIPC_FLASHBASE			0x40
 #define CHIPC_FLASHREGSZ		12
-
 #define	CHIPC_GPIOPU			0x58
 #define	CHIPC_GPIOPD			0x5c
 #define	CHIPC_GPIOIN			0x60
@@ -83,7 +81,7 @@
 #define	CHIPC_CLKDIV			0xa4
 #define	CHIPC_SYS_CLK_CTL		0xc0
 #define CHIPC_FLASH_CFG			0x128
-#define CHIPC_FLASH_WAIT_CNT	0x12C
+#define CHIPC_FLASH_WAIT_CNT		0x12C
 #define	CHIPC_SPROM_CTRL		0x190	/**< SPROM interface (rev >= 32) */
 #define	CHIPC_SPROM_ADDR		0x194
 #define	CHIPC_SPROM_DATA		0x198
@@ -106,113 +104,46 @@
 #define	CHIPC_SPROM_OTP			0x800	/* SPROM/OTP address space */
 
 /* capabilities */
-#define	CHIPC_CAP_UARTS					0x00000003	/* Number of UARTs */
-#define 	CHIPC_CAP_UARTS_SHIFT 		0
-#define	CHIPC_CAP_MIPSEB				0x00000004	/* MIPS is in big-endian mode */
+#define	CHIPC_CAP_UARTS				0x00000003	/* Number of UARTs */
+#define   CHIPC_CAP_UARTS_SHIFT 		0
+#define	CHIPC_CAP_MIPSEB			0x00000004	/* MIPS is in big-endian mode */
 #define 	CHIPC_CAP_MIPSEB_SHIFT		2
-#define	CHIPC_CAP_UCLKSEL				0x00000018	/* UARTs clock select */
+#define	CHIPC_CAP_UCLKSEL			0x00000018	/* UARTs clock select */
 #define		CHIPC_CAP_UCLKSEL_SHIFT		3
 #define		CHIPC_CAP_UCLKSEL_UINTCLK	0x00000001	/* UARTs are driven by internal divided clock */
-#define	CHIPC_CAP_UARTGPIO				0x00000020	/* UARTs own GPIOs 15:12 */
+#define	CHIPC_CAP_UARTGPIO			0x00000020	/* UARTs own GPIOs 15:12 */
 #define		CHIPC_CAP_UARTGPIO_SHIFT	5
-#define	CHIPC_CAP_EXTBUS				0x000000c0	/* External bus mask */
+#define	CHIPC_CAP_EXTBUS			0x000000c0	/* External bus mask */
 #define		CHIPC_CAP_EXTBUS_SHIFT		6
 #define		CHIPC_CAP_EXTBUS_NONE		0x00000000	/* No ExtBus present */
 #define		CHIPC_CAP_EXTBUS_FULL		0x00000001	/* ExtBus: PCMCIA, IDE & Prog */
 #define		CHIPC_CAP_EXTBUS_PROG		0x00000002	/* ExtBus: ProgIf only */
-#define	CHIPC_CAP_FLASH					0x00000700	/* Type of flash */
+#define	CHIPC_CAP_FLASH				0x00000700	/* Type of flash */
 #define		CHIPC_CAP_FLASH_SHIFT		8
-#define	CHIPC_CAP_PLL					0x00038000	/* Type of PLL */
-#define		CHIPC_CAP_PLL_SHIFT			15
-#define	CHIPC_CAP_PWR_CTL				0x00040000	/* Power control */
+#define	CHIPC_CAP_PLL				0x00038000	/* Type of PLL */
+#define		CHIPC_CAP_PLL_SHIFT		15
+#define	CHIPC_CAP_PWR_CTL			0x00040000	/* Power control */
 #define		CHIPC_CAP_PWR_CTL_SHIFT		18
-
-
-#define	CHIPC_CAP_OTP_SIZE				0x00380000	/* OTP Size (0 = none) */
+#define	CHIPC_CAP_OTP_SIZE			0x00380000	/* OTP Size (0 = none) */
 #define		CHIPC_CAP_OTP_SIZE_SHIFT	19		/* OTP Size shift */
 #define		CHIPC_CAP_OTP_SIZE_BASE		5		/* OTP Size base */
-#define	CHIPC_CAP_JTAGP					0x00400000	/* JTAG Master Present */
+#define	CHIPC_CAP_JTAGP				0x00400000	/* JTAG Master Present */
 #define		CHIPC_CAP_JTAGP_SHIFT		22
-#define	CHIPC_CAP_ROM					0x00800000	/* Internal boot rom active */
-#define 	CHIPC_CAP_ROM_SHIFT			23
-#define	CHIPC_CAP_BKPLN64				0x08000000	/* 64-bit backplane */
+#define	CHIPC_CAP_ROM				0x00800000	/* Internal boot rom active */
+#define 	CHIPC_CAP_ROM_SHIFT		23
+#define	CHIPC_CAP_BKPLN64			0x08000000	/* 64-bit backplane */
 #define 	CHIPC_CAP_BKPLN64_SHIFT		27
-#define	CHIPC_CAP_PMU					0x10000000	/* PMU Present, rev >= 20 */
-#define 	CHIPC_CAP_PMU_SHIFT			28
-#define CHIPC_CAP_ECI					0x20000000 /*Enhanced Coexistence Interface */
-#define 	CHIPC_CAP_ECI_SHIFT			29
-#define	CHIPC_CAP_SPROM					0x40000000	/* SPROM Present, rev >= 32 */
+#define	CHIPC_CAP_PMU				0x10000000	/* PMU Present, rev >= 20 */
+#define 	CHIPC_CAP_PMU_SHIFT		28
+#define CHIPC_CAP_ECI				0x20000000 /*Enhanced Coexistence Interface */
+#define 	CHIPC_CAP_ECI_SHIFT		29
+#define	CHIPC_CAP_SPROM				0x40000000	/* SPROM Present, rev >= 32 */
 #define 	CHIPC_CAP_SPROM_SHIFT		30
-#define	CHIPC_CAP_NFLASH				0x80000000	/* Nand flash present, rev >= 35 */
+#define	CHIPC_CAP_NFLASH			0x80000000	/* Nand flash present, rev >= 35 */
 #define 	CHIPC_CAP_NFLASH_SHIFT		31
 
-#define	CHIPC_CAP2_SECI				0x00000001	/* SECI Present, rev >= 36 */
-#define	CHIPC_CAP2_GSIO				0x00000002	/* GSIO (spi/i2c) present, rev >= 37 */
-
-/**
- * Registers
- */
-#define BCMA_CC_CAP							0x0004		/* Capabilities */
-#define BCMA_CC_CAP_NUM_UART				0x00000003
-#define BCMA_CC_CAP_NUM_UART_SHIFT 			0
-#define BCMA_CC_CAP_NUM_UART_BASE			2
-#define BCMA_CC_CAP_BIG_ENDIAN				0x00000004
-#define BCMA_CC_CAP_BIG_ENDIAN_SHIFT 		2
-#define BCMA_CC_CAP_BIG_ENDIAN_BASE			1
-#define BCMA_CC_CAP_UART_CLOCK				0x00000018
-#define BCMA_CC_CAP_UART_CLOCK_SHIFT		3
-#define BCMA_CC_CAP_UART_CLOCK_BASE			2
-#define BCMA_CC_CAP_UART_CLOCK_INTERNAL		0x00000001
-#define BCMA_CC_CAP_UART_GPIO				0x00000020
-#define BCMA_CC_CAP_UART_GPIO_SHIFT			5
-#define BCMA_CC_CAP_UART_GPIO_BASE			1
-#define BCMA_CC_CAP_EXTERNAL_BUSES			0x000000C0
-#define	BCMA_CC_CAP_EXTERNAL_BUSES_SHIFT	6
-#define BCMA_CC_CAP_EXTERNAL_BUSES_BASE		2
-#define BCMA_CC_CAP_EXTERNAL_BUSES_NONE		0x00000000
-#define BCMA_CC_CAP_EXTERNAL_BUSES_FULL		0x00000001
-#define BCMA_CC_CAP_EXTERNAL_BUSES_PROG		0x00000002
-
-#define BCMA_CC_CAP_FLASH_TYPE				0x00000700
-#define BCMA_CC_CAP_FLASH_TYPE_SHIFT		8
-#define BCMA_CC_CAP_FLASH_TYPE_BASE			3
-
-#define BCMA_CC_CAP_FLASH_TYPE_NONE			0x00000000
-#define BCMA_CC_CAP_FLASH_TYPE_ST			0x00000001
-#define BCMA_CC_CAP_FLASH_TYPE_ATMEL		0x00000002
-#define BCMA_CC_CAP_FLASH_TYPE_PARALLEL		0x00000007
-
-#define BCMA_CC_CAP_PLL_TYPE				0x00038000
-#define BCMA_CC_CAP_PLL_TYPE_SHIFT			15
-#define BCMA_CC_CAP_PLL_TYPE_BASE			3
-#define BCMA_CC_CAP_POWER_CONTROL			0x00040000
-#define BCMA_CC_CAP_POWER_CONTROL_SHIFT		18
-#define BCMA_CC_CAP_POWER_CONTROL_BASE		1
-#define BCMA_CC_CAP_OTP_SIZE				0x00380000
-#define BCMA_CC_CAP_OTP_SIZE_SHIFT			19
-#define BCMA_CC_CAP_OTP_SIZE_BASE			3
-#define BCMA_CC_CAP_JTAG_MASTER				0x00400000
-#define BCMA_CC_CAP_JTAG_MASTER_SHIFT		22
-#define BCMA_CC_CAP_JTAG_MASTER_BASE		1
-#define BCMA_CC_CAP_BOOT_ROM				0x00800000
-#define BCMA_CC_CAP_BOOT_ROM_SHIFT			23
-#define BCMA_CC_CAP_BOOT_ROM_BASE			1
-#define BCMA_CC_CAP_64BIT					0x08000000
-#define BCMA_CC_CAP_64BIT_SHIFT				27
-#define BCMA_CC_CAP_64BIT_BASE				1
-#define BCMA_CC_CAP_PMU						0x10000000
-#define BCMA_CC_CAP_PMU_SHIFT				28
-#define BCMA_CC_CAP_PMU_BASE				1
-#define BCMA_CC_CAP_ECI						0x20000000 /*Enhanced Coexistence Interface */
-#define BCMA_CC_CAP_ECI_SHIFT				29
-#define BCMA_CC_CAP_ECI_BASE				1
-#define BCMA_CC_CAP_SPROM					0x40000000
-#define BCMA_CC_CAP_SPROM_SHIFT				30
-#define BCMA_CC_CAP_SPROM_BASE				1
-#define BCMA_CC_CAP_NAND_FLASH				0x80000000
-#define BCMA_CC_CAP_NAND_FLASH_SHIFT		31
-#define BCMA_CC_CAP_NAND_FLASH_BASE			1
-
+#define	CHIPC_CAP2_SECI			0x00000001	/* SECI Present, rev >= 36 */
+#define	CHIPC_CAP2_GSIO			0x00000002	/* GSIO (spi/i2c) present, rev >= 37 */
 
 /*
  * ChipStatus (Common)
