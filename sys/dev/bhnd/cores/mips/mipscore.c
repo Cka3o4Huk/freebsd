@@ -43,7 +43,7 @@ static int mipscore_probe(device_t dev){
 
 	for( struct bhnd_core_id* testid = mipscore_ids; testid->mfg != -1; testid++ ){
 		if(mfg == testid->mfg && devid == testid->devid){
-			bhnd_set_generic_core_desc(dev);
+			device_set_desc(dev, "BHND MIPS processor");
 			return (BUS_PROBE_DEFAULT);
 		}
 	}

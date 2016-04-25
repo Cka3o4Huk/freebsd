@@ -45,9 +45,9 @@ __FBSDID("$FreeBSD$");
 #include <sys/bus.h>
 #include <sys/module.h>
 #include <sys/systm.h>
-#include <sys/rman.h>
 
 #include <machine/bus.h>
+#include <sys/rman.h>
 #include <machine/resource.h>
 
 #include <dev/bhnd/bhnd.h>
@@ -59,7 +59,7 @@ __FBSDID("$FreeBSD$");
 devclass_t bhnd_chipc_devclass;	/**< bhnd(4) chipcommon device class */
 
 static const struct resource_spec chipc_rspec[CHIPC_MAX_RSPEC] = {
-	{ SYS_RES_MEMORY,	0,	RF_ACTIVE | RF_SHAREABLE},
+	{ SYS_RES_MEMORY,	0,	RF_ACTIVE },
 	{ -1, -1, 0 }
 };
 
@@ -157,13 +157,6 @@ chipc_attach(device_t dev)
 	chipc_parse_capabilities(&sc->capabilities, sc->caps);
 	if(bootverbose)
 		chipc_print_capacilities(&sc->capabilities);
-
-	/* Populate the set of applicable quirk flags */
-	sc->quirks = 0;
-	for (dq = chipc_quirks; dq->quirks != 0; dq++) {
-		if (bhnd_hwrev_matches(bhnd_get_hwrev(dev), &dq->hwrev))
-			sc->quirks |= dq->quirks;
-	};
 
 	// TODO
 	switch (bhnd_chipc_nvram_src(dev)) {
@@ -371,7 +364,7 @@ static device_method_t chipc_methods[] = {
 	DEVMETHOD(bus_probe_nomatch,		chipc_probe_nomatch),
 
 	/* ChipCommon interface */
-	DEVMETHOD(bhnd_chipc_nvram_src,		chipc_nvram_src),
+	DEVMETHOD(bhnd_chipc_nvram_src,	chipc_nvram_src),
 
 	DEVMETHOD_END
 };

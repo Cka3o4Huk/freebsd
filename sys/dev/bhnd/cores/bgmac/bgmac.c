@@ -86,7 +86,7 @@ static int bgmac_probe(device_t dev){
 
 	for( struct bhnd_core_id* testid = bgmac_ids; testid->mfg != -1; testid++ ){
 		if(mfg == testid->mfg && devid == testid->devid){
-			bhnd_set_generic_core_desc(dev);
+			device_set_desc(dev, "BHND GMAC");
 			return (BUS_PROBE_DEFAULT);
 		}
 	}
