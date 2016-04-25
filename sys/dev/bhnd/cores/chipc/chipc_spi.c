@@ -20,7 +20,7 @@ __FBSDID("$FreeBSD$");
 /*
  * Flash slicer
  */
-#include <sys/slicer.h>
+#include "chipc_slicer.h"
 
 /*
  * SPI BUS interface
@@ -52,9 +52,6 @@ static int chipc_spi_attach(device_t dev);
 static int chipc_spi_transfer(device_t dev, device_t child, struct spi_command *cmd);
 static int chipc_spi_txrx(struct chipc_spi_softc *sc, uint8_t in, uint8_t* out);
 static int chipc_spi_wait(struct chipc_spi_softc *sc);
-static int
-chipc_spi_trx_slicer(device_t dev, struct flash_slice *slices, int *nslices);
-
 
 /*
  * **************************** IMPLEMENTATION ************************
@@ -63,59 +60,6 @@ chipc_spi_trx_slicer(device_t dev, struct flash_slice *slices, int *nslices);
 #define TRX_MAGIC 	0x30524448
 #define CFE_MAGIC 	0x43464531
 #define NVRAM_MAGIC	0x48534C46
-
-/* Slicer operates on the TRX-based FW */
-static int chipc_spi_trx_slicer(device_t dev, struct flash_slice *slices, int *nslices)
-{
-	BHND_INFO_DEV(dev, ("chipc_spi_trx_slicer!"));
-
-	//flash(mx25l) <- spibus <- chipc_spi
-	int flash_size = FLASH_GET_SIZE(dev);
-	device_t spibus = device_get_parent(dev);
-	device_t chipc_spi = device_get_parent(spibus);
-	struct chipc_spi_softc *sc = device_get_softc(chipc_spi);
-	*nslices = 0;
-
-	device_printf(dev,"slicer: scanning memory for headers...\n");
-	for(uint32_t ofs = 0; ofs < flash_size; ofs+= 0x1000){
-		uint32_t val = bus_space_read_4(sc->sc_tag, sc->sc_handle, ofs);
-		switch(val){
-		case TRX_MAGIC:
-			device_printf(dev, "TRX found: %x\n", ofs);
-			//read last offset of TRX header
-			uint32_t fs_ofs = bus_space_read_4(sc->sc_tag, sc->sc_handle, ofs + 24);
-			device_printf(dev, "FS offset: %x\n", fs_ofs);
-
-			/*
-			 * GEOM IO will panic if offset is not aligned on sector size, i.e. 512 bytes
-			 */
-			if(fs_ofs % 0x200 != 0){
-				device_printf(dev, "WARNING! filesystem offset should be aligned on sector size (%d bytes)\n", 0x200);
-				break;
-			}
-
-			slices[*nslices].base = ofs + fs_ofs;
-			//XXX: fully sized? any other partition?
-			uint32_t fw_len = bus_space_read_4(sc->sc_tag, sc->sc_handle, ofs + 4);
-			slices[*nslices].size = fw_len - fs_ofs;
-			slices[*nslices].label = "rootfs";
-			*nslices += 1;
-			break;
-		case CFE_MAGIC:
-			device_printf(dev, "CFE found: %x\n", ofs);
-			break;
-		case NVRAM_MAGIC:
-			device_printf(dev, "NVRAM found: %x\n", ofs);
-			break;
-		default:
-			break;
-		}
-	}
-	device_printf(dev,"slicer: done\n");
-
-	return (0);
-
-}
 
 static int chipc_spi_probe(device_t dev){
 	device_set_desc(dev, "ChipCommon SPI");
@@ -140,7 +84,7 @@ static int chipc_spi_attach(device_t dev){
 	sc->sc_tag = rman_get_bustag(sc->sc_res);
 	sc->sc_handle = rman_get_bushandle(sc->sc_res);
 
-	flash_register_slicer(chipc_spi_trx_slicer);
+	flash_register_slicer(chipc_slicer_flash);
 
 	device_add_child(dev, "spibus", 0);
 	return (bus_generic_attach(dev));
