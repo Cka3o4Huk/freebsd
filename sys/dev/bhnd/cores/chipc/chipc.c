@@ -177,6 +177,13 @@ chipc_attach(device_t dev)
 		break;
 	}
 
+	/*
+	 * TODO: need to check with Landon Fuller, I don't like to release resource,
+	 * but it's not shareable memory. So it's difficult to create subdrivers
+	 * like UART, flash.
+	 */
+	bhnd_release_resources(dev, sc->rspec, sc->res);
+
 	int flash_type = sc->capabilities.flash_type;
 	//Parallel Flash
 	switch(flash_type){
