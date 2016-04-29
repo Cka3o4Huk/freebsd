@@ -360,6 +360,13 @@ static device_method_t chipc_methods[] = {
 	DEVMETHOD(bus_release_resource,		bus_generic_rl_release_resource),
 	DEVMETHOD(bus_activate_resource, 	bus_generic_activate_resource),
 	DEVMETHOD(bus_deactivate_resource, 	bus_generic_deactivate_resource),
+
+	DEVMETHOD(bus_setup_intr,		bus_generic_setup_intr),
+	DEVMETHOD(bus_teardown_intr,		bus_generic_teardown_intr),
+	DEVMETHOD(bus_config_intr,		bus_generic_config_intr),
+	DEVMETHOD(bus_bind_intr,		bus_generic_bind_intr),
+	DEVMETHOD(bus_describe_intr,		bus_generic_describe_intr),
+
 	DEVMETHOD(bus_get_resource_list,	chipc_get_resource_list),
 	DEVMETHOD(bus_probe_nomatch,		chipc_probe_nomatch),
 
