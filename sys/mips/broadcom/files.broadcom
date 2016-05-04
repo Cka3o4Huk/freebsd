@@ -4,15 +4,15 @@
 # for USB 1.1 OHCI, Ethernet and IPSEC cores
 # which are believed to be devices we have drivers for
 # which just need to be tweaked for attachment to an SSB system bus.
-mips/bcm471x/s5_machdep.c		standard
+mips/broadcom/bcm_machdep.c		standard
 mips/mips/tick.c			standard
 mips/mips/mips_pic.c			standard
 kern/subr_intr.c			standard
 kern/pic_if.m				standard
 
-mips/bcm471x/uart_cpu_chipc.c		optional uart
-mips/bcm471x/uart_bus_chipc.c		optional uart
-mips/bcm471x/bcm_socinfo.c		standard
+mips/broadcom/uart_cpu_chipc.c		optional uart
+mips/broadcom/uart_bus_chipc.c		optional uart
+mips/broadcom/bcm_socinfo.c		standard
 
 #
 geom/geom_flashmap.c			standard

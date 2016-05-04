@@ -6,5 +6,5 @@ machine		mips mipsel
 cpu		CPU_MIPS74K
 options		CPU_SENTRY5			# XXX should this be a
 								# sub-cpu option?
-files		"../bcm471x/files.bcm471x"
+files		"../broadcom/files.broadcom"
 

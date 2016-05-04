@@ -24,10 +24,10 @@
 #   will be necessary to support multi-user boot.
 #
 
-ident		BCM471x
+ident		BCM
 
-hints		"BCM471x.hints"
-include		"../bcm471x/std.bcm471x"
+hints		"BCM.hints"
+include		"../broadcom/std.broadcom"
 
 # ships with cfe firmware; use the console for now
 options 	CFE
