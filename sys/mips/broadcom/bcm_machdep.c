@@ -161,15 +161,19 @@ mips_init(void)
 #endif
 }
 
+#define	BCM_REG_CHIPC		0xb8000000
+#define	  BCM_REG_CHIPC_PMUWD_OFFS	 0x634
+
 void
 platform_reset(void)
 {
+	void *pmuwatchdog;
 
-#if defined(CFE)
-	cfe_exit(0, 0);
-#else
-	*((volatile uint8_t *)MIPS_PHYS_TO_KSEG1(SENTRY5_EXTIFADR)) = 0x80;
-#endif
+	printf("bcm::platform_reset()\n");
+	pmuwatchdog = (void *)(BCM_REG_CHIPC + BCM_REG_CHIPC_PMUWD_OFFS);
+	intr_disable();
+	writel(pmuwatchdog, 2);
+	for (;;);
 }
 
 void
