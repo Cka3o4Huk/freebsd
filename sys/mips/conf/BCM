@@ -65,10 +65,6 @@ device		bcma_nexus
 device		pci
 device		bhnd_pcib		# PCIe-G1 core
 
-#device		bgmac			# Broadcom GMAC - not yet
-
-device		mdio
-
 #Flash
 device		spibus
 device		mx25l			# Serial Flash
@@ -92,6 +88,9 @@ device		md
 #Ethernet
 # device 	bfe			# XXX will build both pci and siba
 device 		miibus			# attachments
+device		bgmac
+device		mdio
+device		bpf
 
 #NVRAM
 device		nvram2env
