@@ -101,6 +101,7 @@ struct chipc_capabilities{
 
 struct chipc_softc {
 	device_t		dev;
+	device_t		bus;
 
 	struct resource_spec	 rspec[CHIPC_MAX_RSPEC];
 	struct bhnd_resource	*res[CHIPC_MAX_RES];
@@ -113,10 +114,6 @@ struct chipc_softc {
 	uint32_t		 cst;		/**< CHIPC_CST* status register flags */
 	uint32_t		 flash_cfg; /**< CHIPC_FLASH_CFG register data */
 	struct chipc_capabilities capabilities;
-};
-
-struct chipc_devinfo {
-	struct resource_list resources;
 };
 
 #endif /* _BHND_CORES_CHIPC_CHIPCVAR_H_ */

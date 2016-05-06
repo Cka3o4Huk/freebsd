@@ -77,4 +77,4 @@ static driver_t uart_chipc_driver = {
 	sizeof(struct uart_softc),
 };
 
-DRIVER_MODULE(uart, bhnd_chipc, uart_chipc_driver, uart_devclass, 0, 0);
+DRIVER_MODULE(uart, bhnd_chipcbus, uart_chipc_driver, uart_devclass, 0, 0);

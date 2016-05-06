@@ -177,25 +177,24 @@ chipc_attach(device_t dev)
 		break;
 	}
 
-	/*
-	 * TODO: need to check with Landon Fuller, I don't like to release resource,
-	 * but it's not shareable memory. So it's difficult to create subdrivers
-	 * like UART, flash.
-	 */
-	bhnd_release_resources(dev, sc->rspec, sc->res);
+	error = chipc_init_bus(dev);
+	if(error > 0){
+		device_printf(dev,"init_bus with: %d\n", error);
+		goto cleanup;
+	}
 
 	int flash_type = sc->capabilities.flash_type;
 	//Parallel Flash
 	switch(flash_type){
 	case CHIPC_PFLASH:
 		sc->flash_cfg = bhnd_bus_read_4(sc->core, CHIPC_FLASH_CFG);
-		error = chipc_init_pflash(dev, sc->flash_cfg);
+		error = chipc_init_pflash(sc->bus, sc->flash_cfg);
 		break;
 	case CHIPC_SFLASH_AT:
-		error = chipc_init_sflash(dev, "at45d"); //not tested yet
+		error = chipc_init_sflash(sc->bus, "at45d"); //not tested yet
 		break;
 	case CHIPC_SFLASH_ST:
-		error = chipc_init_sflash(dev, "mx25l");
+		error = chipc_init_sflash(sc->bus, "mx25l");
 		break;
 	default:
 		if(bootverbose){
@@ -339,18 +338,6 @@ chipc_nvram_src(device_t dev)
 	return (BHND_NVRAM_SRC_NONE);
 }
 
-
-static struct resource_list *
-chipc_get_resource_list(device_t dev, device_t child)
-{
-	struct chipc_devinfo *dinfo = device_get_ivars(child);
-	return (&dinfo->resources);
-}
-
-static void chipc_probe_nomatch(device_t dev, device_t child){
-	device_printf(dev, "no found driver for %s\n", device_get_name(child));
-};
-
 static device_method_t chipc_methods[] = {
 	/* Device interface */
 	DEVMETHOD(device_probe,		chipc_probe),
@@ -360,11 +347,6 @@ static device_method_t chipc_methods[] = {
 	DEVMETHOD(device_resume,	chipc_resume),
 
 	/* Bus interface */
-	DEVMETHOD(bus_get_resource, 		bus_generic_rl_get_resource),
-	DEVMETHOD(bus_set_resource, 		bus_generic_rl_set_resource),
-	DEVMETHOD(bus_delete_resource,		bus_generic_rl_delete_resource),
-	DEVMETHOD(bus_alloc_resource, 	 	bus_generic_rl_alloc_resource),
-	DEVMETHOD(bus_release_resource,		bus_generic_rl_release_resource),
 	DEVMETHOD(bus_activate_resource, 	bus_generic_activate_resource),
 	DEVMETHOD(bus_deactivate_resource, 	bus_generic_deactivate_resource),
 
@@ -373,9 +355,6 @@ static device_method_t chipc_methods[] = {
 	DEVMETHOD(bus_config_intr,		bus_generic_config_intr),
 	DEVMETHOD(bus_bind_intr,		bus_generic_bind_intr),
 	DEVMETHOD(bus_describe_intr,		bus_generic_describe_intr),
-
-	DEVMETHOD(bus_get_resource_list,	chipc_get_resource_list),
-	DEVMETHOD(bus_probe_nomatch,		chipc_probe_nomatch),
 
 	/* ChipCommon interface */
 	DEVMETHOD(bhnd_chipc_nvram_src,	chipc_nvram_src),

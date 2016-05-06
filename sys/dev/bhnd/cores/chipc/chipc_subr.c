@@ -11,6 +11,7 @@
 #include <sys/malloc.h>
 
 #include <sys/rman.h>
+#include <sys/queue.h>
 
 #include <machine/resource.h>
 #include <dev/bhnd/bhndvar.h>
@@ -20,71 +21,56 @@
 #include "chipc.h"
 #include "chipcvar.h"
 #include "chipcreg.h"
+#include "chipcbus.h"
 
-int chipc_init_flash_resources(device_t dev, struct chipc_devinfo** devinfo);
-int chipc_init_uart_resources(struct chipc_softc* sc, struct chipc_devinfo** devinfo, int uart_index);
-int chipc_alloc_devinfo(device_t dev, struct chipc_devinfo** devinfo);
-
-int chipc_alloc_devinfo(device_t dev, struct chipc_devinfo** devinfo){
-	*devinfo = malloc(sizeof(struct chipc_devinfo*), M_BHND, M_NOWAIT);
-
-	if (*devinfo == NULL){
-		device_printf(dev, "can't allocate memory for chipc_devinfo\n");
-		return ENOMEM;
-	}
-
-	resource_list_init(&((*devinfo)->resources));
-	return 0;
-}
-
-
-/*
- * There are 2 flash resources:
- *  - resource ID (rid) = 0. This is memory-mapped flash memory
- *  - resource ID (rid) = 1. This is memory-mapped flash registers (for instance for SPI)
- */
-int chipc_init_flash_resources(device_t dev, struct chipc_devinfo** devinfo){
-	//XXX: region 1 is taken from actual HW configuration...
-	int chipc_rid = bhnd_get_port_rid(dev, BHND_PORT_DEVICE, 1, 1);
-	struct bhnd_resource* chipc_res = bhnd_alloc_resource_any(dev, SYS_RES_MEMORY, &chipc_rid, 0);
-	if(chipc_res == NULL){
-		device_printf(dev, "can't allocate dev1.1 port for ChipCommon Parallel Flash\n");
+int chipc_init_bus(device_t dev){
+	struct chipc_softc* sc = device_get_softc(dev);
+	device_t bus = device_add_child(dev,"bhnd_chipcbus",-1);
+	if(bus == NULL){
+		BHND_ERROR_DEV(dev, ("error occurred during adding BUS"));
 		return ENXIO;
 	}
 
-	int err = chipc_alloc_devinfo(dev, devinfo);
-	if (err)
-		return err;
+	struct chipcbus_ivar* ivar = malloc(sizeof(struct chipcbus_ivar), M_BHND, M_NOWAIT);
+	if (ivar == NULL){
+		BHND_ERROR_DEV(dev, ("can't allocate memory for chipcbus_ivar"));
+		return ENOMEM;
+	}
 
-	resource_list_add(&((*devinfo)->resources), SYS_RES_MEMORY, 0, rman_get_start(chipc_res->res),
-			rman_get_end(chipc_res->res), 1);
-
-	bhnd_release_resource(dev, SYS_RES_MEMORY, chipc_rid, chipc_res);
+	device_set_ivars(bus, ivar);
+	sc->bus = bus;
+	SLIST_INIT(&ivar->mems);
+	SLIST_INIT(&ivar->irqs);
 
 	/*
-	 * Flash registers
+	 * Iterate over device ports & regions and fill instance variable
 	 */
-	struct chipc_softc* sc = device_get_softc(dev);
-	resource_list_add(&((*devinfo)->resources), SYS_RES_MEMORY, 1,
-			sc->core_start + CHIPC_FLASHBASE,
-			sc->core_start + CHIPC_FLASHBASE + CHIPC_FLASHREGSZ, 1);
+	bhnd_addr_t rg_start;
+	bhnd_size_t rg_size;
+	int ret;
 
-	return 0;
-}
+	for(int i = 0; i < bhnd_get_port_count(dev, BHND_PORT_DEVICE); i++){
+		int rgcnt = bhnd_get_region_count(dev, BHND_PORT_DEVICE, i);
+		BHND_DEBUG_DEV(dev, ("[%d] region count = %d", i, rgcnt));
+		for (int j = 0; j < rgcnt; j++){
+			ret = bhnd_get_region_addr(dev, BHND_PORT_DEVICE, i, j, &rg_start, &rg_size);
+			BHND_DEBUG_DEV(dev, ("[%d.%d] region addr = 0x%jx (%d)", i, j, rg_start, ret));
+			if(!ret){
+				struct chipcbus_reg* reg = malloc(sizeof(struct chipcbus_reg), M_BHND, M_NOWAIT);
+				reg->start = rg_start;
+				reg->end   = rg_start + rg_size - 1;
+				reg->port  = i;
+				reg->reg   = j;
+				SLIST_INSERT_HEAD(&ivar->mems, reg, entries);
+			}
+		}
+	}
 
-int chipc_init_uart_resources(struct chipc_softc* sc, struct chipc_devinfo** devinfo, int uart_index){
-	int err = chipc_alloc_devinfo(sc->dev,	devinfo);
-	if (err)
-		return err;
+	int err = device_probe_and_attach(bus);
+	if(err)
+		BHND_ERROR_DEV(bus,("probe_and_attach failed with error:%d", err));
 
-	resource_list_add(&((*devinfo)->resources), SYS_RES_MEMORY, 0,
-			sc->core_start + CHIPC_UART_BASE,
-			sc->core_start + CHIPC_UART_BASE + CHIPC_UART_SIZE, 1);
-
-	//int irq = 2; // TODO: fetch shareable IRQ from ChipCommon
-
-	resource_list_add(&((*devinfo)->resources), SYS_RES_IRQ, 0, 2, 2, 1);
-	return 0;
+	return err;
 }
 
 int chipc_init_pflash(device_t dev, uint32_t flash_config){
@@ -93,37 +79,24 @@ int chipc_init_pflash(device_t dev, uint32_t flash_config){
 	int enabled = (flash_config & CHIPC_CF_EN);
 	int byteswap = (flash_config & CHIPC_CF_BS);
 
-	device_printf(dev,"trying attach flash width=%d enabled=%d swapbytes=%d\n", width, enabled, byteswap);
+	BHND_DEBUG_DEV(dev,("trying attach flash width=%d enabled=%d swapbytes=%d", width, enabled, byteswap));
 	device_t flashdev = device_add_child(dev, "cfi", -1);
 	if(flashdev == NULL){
-		device_printf(dev, "can't add ChipCommon Parallel Flash to bus\n");
+		BHND_ERROR_DEV(dev, ("can't add ChipCommon Parallel Flash to bus"));
 		return ENXIO;
 	}
 
-	struct chipc_devinfo* devinfo;
-	int err = chipc_init_flash_resources(dev, &devinfo);
-	if (err)
-		return err;
-
-	device_set_ivars(flashdev,devinfo);
 	return 0;
 }
 
 int chipc_init_sflash(device_t dev, char* flash_name){
 	device_t chipc_spi = device_add_child(dev, "spi", -1);
-	if(chipc_spi == NULL){
-		BHND_ERROR_DEV(dev, ("can't add chipc_spi to ChipCommon"));
+	if(!chipc_spi){
+		BHND_ERROR_DEV(dev, ("can't add chipc_spi to ChipCommon "));
 		return ENXIO;
 	}
 
-	struct chipc_devinfo* devinfo;
-	int err = chipc_init_flash_resources(dev, &devinfo);
-	if (err)
-		return err;
-
-	device_set_ivars(chipc_spi,devinfo);
-
-	err = device_probe_and_attach(chipc_spi);
+	int err = device_probe_and_attach(chipc_spi);
 	if(err){
 		BHND_ERROR_DEV(dev, ("failed attach chipc_spi: %d", err));
 		return err;
@@ -138,7 +111,7 @@ int chipc_init_sflash(device_t dev, char* flash_name){
 		return err;
 	}
 
-	if(cnt_children == 0){
+	if(!cnt_children){
 		BHND_ERROR_DEV(chipc_spi, ("no found children"));
 		return ENXIO;
 	}
@@ -153,12 +126,10 @@ int chipc_init_sflash(device_t dev, char* flash_name){
 	}
 
 	err = device_probe_and_attach(flash);
-	if(err){
+	if(err)
 		BHND_ERROR_DEV(dev, ("failed attach flash %s: %d", flash_name, err));
-		return err;
-	}
 
-	return 0;
+	return err;
 }
 
 int chipc_init_uarts(struct chipc_softc* sc, int num_uarts){
@@ -167,15 +138,17 @@ int chipc_init_uarts(struct chipc_softc* sc, int num_uarts){
 	else if (num_uarts == 0)
 		return 0;
 
-	device_t child = device_add_child(sc->dev, "uart", 0);
-	struct chipc_devinfo* devinfo;
-	int err = chipc_init_uart_resources(sc, &devinfo, 0);
-	if (err)
-		return err;
+	device_t child = device_add_child(sc->bus, "uart", 0);
+	if(!child){
+		BHND_ERROR_DEV(sc->bus, ("can'd add UART to bus"));
+		return ENXIO;
+	}
 
-	device_set_ivars(child,devinfo);
+	int err = device_probe_and_attach(child);
+	if(err)
+		BHND_ERROR_DEV(child, ("error occuried on probe_and_attach: %d", err));
 
-	return 0;
+	return err;
 }
 
 void chipc_print_capacilities(struct chipc_capabilities* capabilities){

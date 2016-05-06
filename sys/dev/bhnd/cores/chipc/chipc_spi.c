@@ -186,4 +186,4 @@ static driver_t chipc_spi_driver = {
 static devclass_t chipc_spi_devclass;
 
 
-DRIVER_MODULE(chipc_spi, bhnd_chipc, chipc_spi_driver, chipc_spi_devclass, 0, 0);
+DRIVER_MODULE(chipc_spi, bhnd_chipcbus, chipc_spi_driver, chipc_spi_devclass, 0, 0);
