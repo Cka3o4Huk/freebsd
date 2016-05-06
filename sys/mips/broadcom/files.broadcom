@@ -33,3 +33,12 @@ dev/bhnd/cores/usb/bhnd_ohci.c		optional ohci
 
 # NVRAM
 dev/bhnd/cores/chipc/chipc_otp.c	optional nvram2env
+mips/broadcom/bgmac/bgmac.c		optional bgmac 
+mips/broadcom/bgmac/bgmac_ddb.c		optional bgmac 
+mips/broadcom/bgmac/bgmac_tx.c		optional bgmac
+mips/broadcom/bgmac/bcm_dma.c		optional bgmac
+mips/broadcom/bgmac/bcm_dma_ops.c	optional bgmac
+mips/broadcom/bgmac/bcm_dma_ring.c	optional bgmac
+mips/broadcom/bgmac/bcm_dma_rx.c	optional bgmac
+mips/broadcom/bgmac/bcm_dma_tx.c	optional bgmac
+
