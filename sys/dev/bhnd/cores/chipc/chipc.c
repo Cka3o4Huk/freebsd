@@ -54,6 +54,7 @@ __FBSDID("$FreeBSD$");
 
 #include "bhnd_nvram_if.h"
 
+#include "chipc.h"
 #include "chipcreg.h"
 #include "chipcvar.h"
 
@@ -153,6 +154,7 @@ chipc_attach(device_t dev)
 	uint32_t			 ccid_reg;
 	uint8_t				 chip_type;
 	int				 error;
+	uint8_t				 uart_cnt;
 
 	sc = device_get_softc(dev);
 	sc->dev = dev;
@@ -217,6 +219,49 @@ chipc_attach(device_t dev)
 	case BHND_NVRAM_SRC_UNKNOWN:
 		/* Handled externally */
 		break;
+	}
+	
+	chipc_parse_capabilities(&sc->capabilities, sc->caps);
+	error = chipc_init_bus(dev);
+	if (error != 0) {
+		device_printf(dev,"init_bus with: %d\n", error);
+		goto cleanup;
+	}
+
+	switch(sc->capabilities.flash_type){
+	case CHIPC_PFLASH:
+		/* Parallel flash */
+		sc->flash_cfg = bhnd_bus_read_4(sc->core, CHIPC_FLASH_CFG);
+		error = chipc_init_pflash(sc->bus, sc->flash_cfg);
+		break;
+	case CHIPC_SFLASH_AT:
+		/* Serial flash at45d */
+		error = chipc_init_sflash(sc->bus, "at45d"); //not tested yet
+		break;
+	case CHIPC_SFLASH_ST:
+		/* Serial flash mx25l */
+		error = chipc_init_sflash(sc->bus, "mx25l");
+		break;
+	default:
+		if (bootverbose)
+			device_printf(dev, "no flash found\n");
+	}
+
+	if (error != 0) {
+		device_printf(dev,"init_flash_failed with: %d\n", error);
+		goto cleanup;
+	}
+
+	uart_cnt = sc->capabilities.num_uarts;
+	if (uart_cnt > 0 && (error = chipc_init_uarts(sc, uart_cnt)) > 0){
+		device_printf(dev,"init_uarts failed with: %d\n", error);
+		goto cleanup;
+	}
+
+	error = bus_generic_attach(dev);
+	if (error != 0) {
+		device_printf(dev, "bus_generic_attach failed: %d\n", error);
+		goto cleanup;
 	}
 
 	return (0);
@@ -496,7 +541,17 @@ static device_method_t chipc_methods[] = {
 	DEVMETHOD(device_detach,	chipc_detach),
 	DEVMETHOD(device_suspend,	chipc_suspend),
 	DEVMETHOD(device_resume,	chipc_resume),
-	
+
+	/* Bus interface */
+	DEVMETHOD(bus_activate_resource, 	bus_generic_activate_resource),
+	DEVMETHOD(bus_deactivate_resource, 	bus_generic_deactivate_resource),
+
+	DEVMETHOD(bus_setup_intr,		bus_generic_setup_intr),
+	DEVMETHOD(bus_teardown_intr,		bus_generic_teardown_intr),
+	DEVMETHOD(bus_config_intr,		bus_generic_config_intr),
+	DEVMETHOD(bus_bind_intr,		bus_generic_bind_intr),
+	DEVMETHOD(bus_describe_intr,		bus_generic_describe_intr),
+
 	/* ChipCommon interface */
 	DEVMETHOD(bhnd_chipc_nvram_src,	chipc_nvram_src),
 
