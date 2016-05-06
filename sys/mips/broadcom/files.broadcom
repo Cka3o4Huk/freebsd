@@ -27,6 +27,7 @@ dev/bhnd/bcma/bcma_nexus.c		standard
 #dev/bhnd/bcma/bcma_bhndb.c		standard
 dev/bhnd/bcma/bcma_erom.c		standard
 dev/bhnd/bcma/bcma_subr.c		standard
+dev/bhnd/cores/bgmac/bgmac.c		optional bgmac 
 dev/bhnd/cores/chipc/chipc_subr.c	standard
 dev/bhnd/cores/chipc/chipc_cfi.c	optional cfi 
 dev/bhnd/cores/chipc/chipc_spi.c	optional spibus
