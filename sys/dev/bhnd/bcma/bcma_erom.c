@@ -1005,6 +1005,14 @@ bcma_erom_corecfg_fill_port_regions(struct bcma_erom *erom,
 		if (spr.region_port != port_num ||
 		    spr.region_type != region_type)
 		{
+
+			if(bootverbose){
+				EROM_LOG(erom, "core%u %s%u.%u: mismatch "
+					"got: 0x%x (0x%x)\n",
+					corecfg->core_info.core_idx,
+					bhnd_port_type_name(port_type),
+					port_num, region_num, spr.region_port, spr.region_type);
+			}
 			/* We don't want to consume this entry */
 			bcma_erom_seek(erom, entry_offset);
 
@@ -1025,6 +1033,14 @@ bcma_erom_corecfg_fill_port_regions(struct bcma_erom *erom,
 		map->m_base = spr.base_addr;
 		map->m_size = spr.size;
 		map->m_rid = -1;
+
+		if(bootverbose){
+			EROM_LOG(erom, "core%u %s%u.%u: success "
+			    "address region: 0x%llx (0x%llx)\n",
+			    corecfg->core_info.core_idx,
+			    bhnd_port_type_name(port_type),
+			    port_num, region_num, spr.base_addr ,spr.size);
+		}
 
 		/* Add the region map to the port */
 		STAILQ_INSERT_TAIL(&sport->sp_maps, map, m_link);
@@ -1119,11 +1135,11 @@ bcma_erom_next_corecfg(struct bcma_erom *erom, struct bcma_corecfg **result)
 
 	if (bootverbose) {
 		EROM_LOG(erom, 
-		    "core%u: %s %s (cid=%hx, rev=%hu, unit=%d)\n",
+		    "core%u: %s %s (cid=%hx, rev=%hu, unit=%d, d/mw/sw = %lu/%lu/%lu )\n",
 		    core_index,
 		    bhnd_vendor_name(core.vendor),
 		    bhnd_find_core_name(core.vendor, core.device), 
-		    core.device, core.rev, core_unit);
+		    core.device, core.rev, core_unit, core.num_dport, core.num_mwrap, core.num_swrap);
 	}
 
 	cfg->num_master_ports = core.num_mport;
