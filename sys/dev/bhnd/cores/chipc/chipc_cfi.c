@@ -59,3 +59,4 @@ static driver_t chipc_cfi_driver = {
 };
 
 DRIVER_MODULE(cfi, bhnd_chipcbus, chipc_cfi_driver, cfi_devclass, 0, 0);
+

@@ -1,0 +1,44 @@
+# $FreeBSD$
+
+# TODO: Add attachment elsehwere in the tree
+# for USB 1.1 OHCI, Ethernet and IPSEC cores
+# which are believed to be devices we have drivers for
+# which just need to be tweaked for attachment to an SSB system bus.
+mips/bcm471x/s5_machdep.c		standard
+mips/mips/tick.c			standard
+mips/mips/mips_pic.c			standard
+kern/subr_intr.c			standard
+kern/pic_if.m				standard
+
+mips/bcm471x/uart_cpu_chipc.c		optional uart
+mips/bcm471x/uart_bus_chipc.c		optional uart
+mips/bcm471x/bcm_socinfo.c		standard
+
+#
+geom/geom_flashmap.c			standard
+#
+dev/bhnd/bhnd.c				standard
+dev/bhnd/bhnd_subr.c			standard
+dev/bhnd/bhnd_bus_if.m			standard
+dev/bhnd/bhndb/bhndb_if.m		standard
+dev/bhnd/bhndb/bhndb_bus_if.m		standard
+dev/bhnd/bcma/bcma.c			standard
+dev/bhnd/bcma/bcma_nexus.c		standard
+#dev/bhnd/bcma/bcma_bhndb.c		standard
+dev/bhnd/bcma/bcma_erom.c		standard
+dev/bhnd/bcma/bcma_subr.c		standard
+dev/bhnd/cores/bgmac/bgmac.c		optional bgmac 
+dev/bhnd/cores/chipc/chipc_subr.c	standard
+dev/bhnd/cores/chipc/chipc_cfi.c	optional cfi 
+dev/bhnd/cores/chipc/chipc_spi.c	optional spibus
+dev/bhnd/cores/chipc/chipc_slicer.c	optional cfi | spibus 
+dev/bhnd/cores/chipc/chipc.c		standard
+dev/bhnd/cores/chipc/bhnd_chipc_if.m	standard
+dev/bhnd/cores/mips/mipscore.c		standard
+dev/bhnd/nvram/bhnd_nvram_if.m		standard
+#dev/bhnd/siba/siba.c			standard
+#dev/bhnd/siba/siba_bhndb.c		standard
+#dev/bhnd/siba/siba_nexus.c		standard
+#dev/bhnd/siba/siba_subr.c		standard
+dev/bhnd/soc/bhnd_soc.c			standard
+#
