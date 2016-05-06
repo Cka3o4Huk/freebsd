@@ -31,7 +31,6 @@ include		"../broadcom/std.broadcom"
 
 # ships with cfe firmware; use the console for now
 options 	CFE
-options 	CFE_CONSOLE
 options 	ALT_BREAK_TO_DEBUGGER
 options 	BREAK_TO_DEBUGGER
 options		BOOTVERBOSE=0
