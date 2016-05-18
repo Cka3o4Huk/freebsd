@@ -54,9 +54,9 @@ static const struct resource_spec mipscore_rspec[MIPSCORE_MAX_RSPEC] = {
 };
 
 struct bhnd_device mipscore_match[] = {
-	BHND_MIPS_DEVICE(MIPS,		"BHND MIPS processor", 		NULL),
-	BHND_MIPS_DEVICE(MIPS33,	"BHND MIPS3302 processor", 	NULL),
-	BHND_MIPS_DEVICE(MIPS74K,	"BHND MIPS74K processor", 	NULL),
+	BHND_MIPS_DEVICE(MIPS,		"MIPS processor",	NULL),
+	BHND_MIPS_DEVICE(MIPS33,	"MIPS3302 processor",	NULL),
+	BHND_MIPS_DEVICE(MIPS74K,	"MIPS74K processor",	NULL),
 	BHND_DEVICE_END
 };
 
@@ -69,7 +69,7 @@ mipscore_probe(device_t dev)
 	if (id == NULL)
 		return (ENXIO);
 
-	bhnd_set_default_core_desc(dev);
+	device_set_desc(dev, id->desc);
 	return (BUS_PROBE_DEFAULT);
 }
 
