@@ -76,130 +76,198 @@
 #include "bgmacvar.h"
 #include "bgmacreg.h"
 
-static const struct resource_spec bgmac_rspec[BGMAC_MAX_RSPEC] = {
+struct resource_spec bgmac_rspec[BGMAC_MAX_RSPEC] = {
 	{ SYS_RES_MEMORY,	0,	RF_ACTIVE },
 	{ -1, -1, 0 }
 };
 
-static struct bhnd_core_id bgmac_ids[] = {
-		{BHND_MFGID_BCM, BHND_COREID_GMAC},
-		{-1,-1}
+struct bhnd_device bgmac_match[] = {
+	BHND_DEVICE(GMAC, "BHND Gigabit MAC", NULL, NULL),
+	BHND_DEVICE_END,
 };
 
-/**
+
+/****************************************************************************
  * Prototypes
+ ****************************************************************************/
+
+static int	bgmac_probe(device_t dev);
+static int	bgmac_attach(device_t dev);
+
+/*
+ * MII interface
  */
+static int	bgmac_readreg(device_t dev, int phy, int reg);
+static int	bgmac_writereg(device_t dev, int phy, int reg, int val);
 
-static int bgmac_probe(device_t dev);
-static int bgmac_attach(device_t dev);
+static int	bgmac_phyreg_poll(device_t dev, uint32_t reg, uint32_t mask);
+static int	bgmac_phyreg_op(device_t dev, phymode op, int phy, int reg,
+		    int* val);
 
-static int bgmac_readreg(device_t dev,int phy,int reg);
-static int bgmac_writereg(device_t dev,int phy,int reg, int val);
+/*
+ * Driver callbacks for media status and change requests.
+ */
+static int	bgmac_change(struct ifnet *);
+static void	bgmac_stat(struct ifnet *, struct ifmediareq *req);
 
-int bgmac_phyreg_poll(device_t dev,uint32_t reg, uint32_t mask);
-int bgmac_phyreg_op(device_t dev, phymode op, int phy,int reg,int* val);
+static void
 
 /**
  * Implementation
  */
 
-static int bgmac_probe(device_t dev){
-	uint32_t mfg = bhnd_get_vendor(dev);
-	uint32_t devid = bhnd_get_device(dev);
+static int
+bgmac_probe(device_t dev)
+{
+	const struct bhnd_device *id;
 
-	for( struct bhnd_core_id* testid = bgmac_ids; testid->mfg != -1; testid++ ){
-		if(mfg == testid->mfg && devid == testid->devid){
-			device_set_desc(dev, "BHND GMAC");
-			return (BUS_PROBE_DEFAULT);
-		}
-	}
-	return (ENXIO);
+	id = bhnd_device_lookup(dev, bgmac_match, sizeof(bgmac_match[0]));
+	if (id == NULL)
+		return (ENXIO);
+
+	device_set_desc(dev, id->desc);
+	return (BUS_PROBE_DEFAULT);
 }
 
-static int bgmac_attach(device_t dev){
+static int
+bgmac_attach(device_t dev)
+{
+	struct bgmac_softc	*sc;
+	struct resource		*res[BGMAC_MAX_RSPEC];
+	struct ifnet		*ifp;
+	int			 error;
 
-	struct bgmac_softc* sc = device_get_softc(dev);
+	sc = device_get_softc(dev);
 	sc->dev = dev;
 
 	/* Allocate bus resources */
-	memcpy(sc->rspec, bgmac_rspec, sizeof(sc->rspec));
-	int error = bhnd_alloc_resources(dev, sc->rspec, sc->res);
-	if(error)
+	error = bus_alloc_resources(dev, bgmac_rspec, res);
+	if (error)
 		return (error);
 
-	struct resource* res = sc->res[0]->res;
+	sc->mem = res[0];
 
-	if(!res){
-		return (ENXIO);
+	ifp = sc->ifp	= if_alloc(IFT_ETHER);
+
+	ifp->if_softc = sc;
+	if_initname(ifp, device_get_name(dev), device_get_unit(dev));
+
+	error = mii_attach(dev, &sc->miibus, ifp, bgmac_change, bgmac_stat,
+	    BMSR_DEFCAPMASK, MII_PHY_ANY, MII_OFFSET_ANY, 0);
+	if (error) {
+		BHND_ERROR_DEV(dev, "mii_attach failed: %d", error);
+		return error;
 	}
 
-	sc->hdl = rman_get_bushandle(res);
-	sc->tag = rman_get_bustag(res);
+	ether_ifattach(ifp, sc->addr);
+
+	/* TODO
+	 *  - init interrupt handler
+	 *  -
+	 */
 
 	return 0;
 }
 
 int bgmac_phyreg_poll(device_t dev,uint32_t reg, uint32_t mask){
-	struct bgmac_softc* sc = device_get_softc(dev);
+	struct bgmac_softc	*sc;
+	int			 i;
+	uint32_t		 val;
+
+	sc = device_get_softc(dev);
+	i = BGMAC_TIMEOUT;
+
 	/* Poll for the register to complete. */
-	for (int i = 0; i < BGMAC_TIMEOUT; i++) {
+	for (; i > 0; i--) {
 		DELAY(10);
-		uint32_t val = bus_space_read_4(sc->tag, sc->hdl, reg);
-		if ((val & mask) == 0) {
-			DELAY(5);
-			return 0;
-		}
+		val = bus_read_4(sc->mem, reg);
+		if ((val & mask) != 0)
+			continue;
+		/* Success */
+		DELAY(5);
+		return (0);
 	}
-	return -1;
+	return (-1);
 }
 
-int bgmac_phyreg_op(device_t dev, phymode op, int phy,int reg,int* val){
-	struct bgmac_softc* sc = device_get_softc(dev);
+static int
+bgmac_phyreg_op(device_t dev, phymode op, int phy, int reg, int* val)
+{
+	struct bgmac_softc	*sc;
+	uint32_t		 tmp;
 
-	//Set address on PHY control register
-	uint32_t tmp = bus_space_read_4(sc->tag, sc->hdl, BGMAC_REG_PHY_CONTROL);
+	sc = device_get_softc(dev);
+
+	/* Set address on PHY control register */
+	tmp = bus_read_4(sc->mem, BGMAC_REG_PHY_CONTROL);
 	tmp = (tmp & (~BGMAC_REG_PHY_ACCESS_ADDR)) | phy;
-	bus_space_write_4(sc->tag, sc->hdl, BGMAC_REG_PHY_CONTROL, tmp);
 
-	//Send header (first 16 bytes) over MII
+	bus_write_4(sc->mem, BGMAC_REG_PHY_CONTROL, tmp);
+
+	/* Send header (first 16 bytes) over MII */
 	tmp = BGMAC_REG_PHY_ACCESS_START;
-	if(op == PHY_WRITE){
+	if (op == PHY_WRITE) {
 		tmp |= BGMAC_REG_PHY_ACCESS_WRITE;
 		tmp |= (*val & BGMAC_REG_PHY_ACCESS_DATA);
 	}
-	tmp |= phy << BGMAC_REG_PHY_ACCESS_ADDR_SHIFT;
-	tmp |= reg << BGMAC_REG_PHY_ACCESS_REG_SHIFT;
 
-	bus_space_write_4(sc->tag, sc->hdl, BGMAC_REG_PHY_ACCESS, tmp);
+	tmp |= (phy << BGMAC_REG_PHY_ACCESS_ADDR_SHIFT);
+	tmp |= (reg << BGMAC_REG_PHY_ACCESS_REG_SHIFT);
 
-	//Wait while operation is finished
-	if(bgmac_phyreg_poll(dev, BGMAC_REG_PHY_ACCESS, BGMAC_REG_PHY_ACCESS_START)){
-		return -1;
+	bus_write_4(sc->mem, BGMAC_REG_PHY_ACCESS, tmp);
+
+	/* Wait while operation is finished */
+	if (bgmac_phyreg_poll(dev, BGMAC_REG_PHY_ACCESS,
+	    BGMAC_REG_PHY_ACCESS_START)) {
+		return (-1);
 	}
 
-	if(op == PHY_READ){
-		//Read rest of 16 bytes back
-		tmp = bus_space_read_4(sc->tag, sc->hdl, BGMAC_REG_PHY_ACCESS);
+	if (op == PHY_READ) {
+		/* Read rest of 16 bytes back */
+		tmp = bus_read_4(sc->mem, BGMAC_REG_PHY_ACCESS);
 		tmp &= BGMAC_REG_PHY_ACCESS_DATA;
 		*val = tmp;
 	}
-	return 0;
+
+	return (0);
 }
 
-static int bgmac_readreg(device_t dev,int phy,int reg){
+static int
+bgmac_readreg(device_t dev, int phy, int reg)
+{
 	int tmp;
-	if(bgmac_phyreg_op(dev, PHY_READ,phy,reg,&tmp)){
-		return -1;
+
+	if (bgmac_phyreg_op(dev, PHY_READ, phy, reg, &tmp)) {
+		return (-1);
 	}
-	return tmp;
+
+	return (tmp);
 }
 
-static int bgmac_writereg(device_t dev,int phy,int reg, int val){
-	int tmp = val;
-	if(bgmac_phyreg_op(dev, PHY_WRITE,phy,reg,&tmp)){
-		return -1;
+static int
+bgmac_writereg(device_t dev, int phy, int reg, int val)
+{
+	int tmp;
+
+	tmp = val;
+	if (bgmac_phyreg_op(dev, PHY_WRITE, phy, reg, &tmp)) {
+		return (-1);
 	}
-	return 0;
+
+	return (0);
+}
+
+static int
+bgmac_change(struct ifnet *ifp){
+	device_printf(((struct bgmac_softc*)ifp->if_softc)->dev, "change!\n");
+	return (0);
+}
+
+static void
+bgmac_stat(struct ifnet *ifp, struct ifmediareq *req)
+{
+	device_printf(((struct bgmac_softc*)ifp->if_softc)->dev, "stat!\n");
+	return;
 }
 
 /**
@@ -207,8 +275,8 @@ static int bgmac_writereg(device_t dev,int phy,int reg, int val){
  */
 
 static device_method_t bgmac_methods[] = {
-		DEVMETHOD(device_probe,	 bgmac_probe),
-		DEVMETHOD(device_attach, bgmac_attach),
+		DEVMETHOD(device_probe,	 	bgmac_probe),
+		DEVMETHOD(device_attach, 	bgmac_attach),
 		/** miibus interface **/
 		DEVMETHOD(miibus_readreg, 	bgmac_readreg),
 		DEVMETHOD(miibus_writereg, 	bgmac_writereg),
@@ -218,6 +286,8 @@ static device_method_t bgmac_methods[] = {
 
 devclass_t bhnd_bgmac_devclass;
 
-DEFINE_CLASS_0(bhnd_bgmac, bgmac_driver, bgmac_methods, sizeof(struct bgmac_softc));
+DEFINE_CLASS_0(bhnd_bgmac, bgmac_driver, bgmac_methods,
+		sizeof(struct bgmac_softc));
 DRIVER_MODULE(bhnd_bgmac, bhnd, bgmac_driver, bhnd_bgmac_devclass, 0, 0);
+DRIVER_MODULE(miibus, bhnd_bgmac, miibus_driver, miibus_devclass, 0, 0);
 MODULE_VERSION(bhnd_bgmac, 1);

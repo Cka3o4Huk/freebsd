@@ -87,6 +87,7 @@ device		md
 #Ethernet
 # device 	bfe			# XXX will build both pci and siba
 device 		miibus			# attachments
+device		bgmac
 
 #NVRAM
 device		nvram2env
