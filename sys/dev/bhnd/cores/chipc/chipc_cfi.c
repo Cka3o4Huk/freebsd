@@ -50,6 +50,12 @@ __FBSDID("$FreeBSD$");
 #include "chipcvar.h"
 #include "chipc_slicer.h"
 
+static int	chipc_cfi_probe(device_t dev);
+static int	chipc_cfi_attach(device_t dev);
+static device_t	chipc_cfi_add_child(device_t dev, u_int order, const char *name,
+		    int unit);
+
+
 static int
 chipc_cfi_probe(device_t dev)
 {
@@ -73,12 +79,28 @@ chipc_cfi_attach(device_t dev)
 	return (cfi_attach(dev));
 }
 
+static device_t
+chipc_cfi_add_child(device_t dev, u_int order, const char *name, int unit)
+{
+	struct cfi_softc	*sc;
+	device_t		 child;
+
+	sc = device_get_softc(dev);
+	child = bus_generic_add_child(dev, order, name, unit);
+
+	if (child != NULL && strcmp(device_get_name(child), "nvram2env") == 0)
+		device_set_ivars(child, sc->sc_res);
+
+	return (child);
+}
+
 static device_method_t chipc_cfi_methods[] = {
 	/* device interface */
 	DEVMETHOD(device_probe,		chipc_cfi_probe),
 	DEVMETHOD(device_attach,	chipc_cfi_attach),
 	DEVMETHOD(device_detach,	cfi_detach),
-
+	/* bus */
+	DEVMETHOD(bus_add_child,	chipc_cfi_add_child),
 	{0, 0}
 };
 

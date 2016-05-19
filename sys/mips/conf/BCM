@@ -102,6 +102,9 @@ device		vlan
 #NVRAM
 device		nvram2env
 
+#NVRAM
+device		nvram2env
+
 # pci devices
 
 # USB
