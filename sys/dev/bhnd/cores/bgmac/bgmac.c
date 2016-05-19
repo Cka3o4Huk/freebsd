@@ -78,6 +78,7 @@
 
 struct resource_spec bgmac_rspec[BGMAC_MAX_RSPEC] = {
 	{ SYS_RES_MEMORY,	0,	RF_ACTIVE },
+	{ SYS_RES_IRQ,		0,	RF_ACTIVE },
 	{ -1, -1, 0 }
 };
 
@@ -110,11 +111,21 @@ static int	bgmac_phyreg_op(device_t dev, phymode op, int phy, int reg,
 static int	bgmac_change(struct ifnet *);
 static void	bgmac_stat(struct ifnet *, struct ifmediareq *req);
 
-static void
+/**
+ * Interrupt flow
+ */
+static void	bgmac_intr(void *arg);
+
 
 /**
- * Implementation
+ * Internals
  */
+static int	bgmac_setup_interface(device_t dev);
+
+/*
+ * **************************** Implementation ****************************
+ */
+
 
 static int
 bgmac_probe(device_t dev)
@@ -134,22 +145,49 @@ bgmac_attach(device_t dev)
 {
 	struct bgmac_softc	*sc;
 	struct resource		*res[BGMAC_MAX_RSPEC];
-	struct ifnet		*ifp;
 	int			 error;
 
 	sc = device_get_softc(dev);
 	sc->dev = dev;
 
+	/*
+	 * FIXME: move to hints
+	 */
+	bus_set_resource(dev, SYS_RES_IRQ, 0, 4, 1);
+
 	/* Allocate bus resources */
 	error = bus_alloc_resources(dev, bgmac_rspec, res);
-	if (error)
+	if (error){
+		BHND_ERROR_DEV(dev, "can't allocate resources: %d", error);
 		return (error);
+	}
 
 	sc->mem = res[0];
+	sc->irq = res[1];
 
+	error = bgmac_setup_interface(dev);
+	/* TODO
+	 *  - init interrupt handler
+	 *  -
+	 */
+
+	return 0;
+}
+
+/*
+ * Setup interface
+ */
+static int
+bgmac_setup_interface(device_t dev)
+{
+	struct bgmac_softc	*sc;
+	int			 error;
+	struct ifnet		*ifp;
+
+	sc = device_get_softc(dev);
 	ifp = sc->ifp	= if_alloc(IFT_ETHER);
-
 	ifp->if_softc = sc;
+
 	if_initname(ifp, device_get_name(dev), device_get_unit(dev));
 
 	error = mii_attach(dev, &sc->miibus, ifp, bgmac_change, bgmac_stat,
@@ -161,13 +199,24 @@ bgmac_attach(device_t dev)
 
 	ether_ifattach(ifp, sc->addr);
 
-	/* TODO
-	 *  - init interrupt handler
-	 *  -
+	ifp->if_capabilities = ifp->if_capenable = 0;
+
+	/*
+	 * Hook interrupt
+	 */
+	error = bus_setup_intr(dev, sc->irq, INTR_TYPE_NET | INTR_MPSAFE,
+			NULL, bgmac_intr, sc, &sc->intrhand);
+
+	/*
+	 * TODO: ifmedia_init / add / set
 	 */
 
-	return 0;
+	return (0);
 }
+
+/*
+ * **************************** MII BUS Functions ****************************
+ */
 
 int bgmac_phyreg_poll(device_t dev,uint32_t reg, uint32_t mask){
 	struct bgmac_softc	*sc;
@@ -257,6 +306,10 @@ bgmac_writereg(device_t dev, int phy, int reg, int val)
 	return (0);
 }
 
+/**
+ * Media
+ */
+
 static int
 bgmac_change(struct ifnet *ifp){
 	device_printf(((struct bgmac_softc*)ifp->if_softc)->dev, "change!\n");
@@ -268,6 +321,25 @@ bgmac_stat(struct ifnet *ifp, struct ifmediareq *req)
 {
 	device_printf(((struct bgmac_softc*)ifp->if_softc)->dev, "stat!\n");
 	return;
+}
+
+/**
+ * Intr
+ */
+
+static void
+bgmac_intr(void *arg)
+{
+	struct bgmac_softc	*sc;
+
+	sc = (struct bgmac_softc*)arg;
+	/**
+	 * Read status
+	 * Handle rx
+	 * Handle tr
+	 * Handle errors
+	 */
+	device_printf(sc->dev, "bgmac_intr\n");
 }
 
 /**

@@ -30,12 +30,14 @@
 #pragma once
 
 #define BGMAC_TIMEOUT 1000
-#define BGMAC_MAX_RSPEC	2
+#define BGMAC_MAX_RSPEC	3
 
 struct bgmac_softc {
 	device_t 		 dev;
 	device_t		 miibus;
 	struct resource		*mem;
+	struct resource		*irq;
+	void			*intrhand;
 	struct ifnet		*ifp;
 	u_char                  addr[6];
 };
