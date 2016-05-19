@@ -65,6 +65,8 @@ static int	chipc_spi_transfer(device_t dev, device_t child,
 static int	chipc_spi_txrx(struct chipc_spi_softc *sc, uint8_t in,
 		    uint8_t* out);
 static int	chipc_spi_wait(struct chipc_spi_softc *sc);
+static device_t	chipc_spi_add_child(device_t dev, u_int order, const char *name,
+		    int unit);
 
 static int
 chipc_spi_probe(device_t dev)
@@ -174,6 +176,21 @@ chipc_spi_detach(device_t dev)
 	return (0);
 }
 
+static device_t
+chipc_spi_add_child(device_t dev, u_int order, const char *name, int unit)
+{
+	struct chipc_spi_softc	*sc;
+	device_t		 child;
+
+	sc = device_get_softc(dev);
+	child = bus_generic_add_child(dev, order, name, unit);
+
+	if (child != NULL && strcmp(device_get_name(child), "nvram2env") == 0)
+		device_set_ivars(child, sc->sc_res);
+
+	return (child);
+}
+
 static int
 chipc_spi_wait(struct chipc_spi_softc *sc)
 {
@@ -265,6 +282,8 @@ static device_method_t chipc_spi_methods[] = {
 		DEVMETHOD(device_attach,	chipc_spi_attach),
 		DEVMETHOD(device_detach,	chipc_spi_detach),
 
+		/* bus */
+		DEVMETHOD(bus_add_child,	chipc_spi_add_child),
 		/* SPI */
 		DEVMETHOD(spibus_transfer,	chipc_spi_transfer),
 		DEVMETHOD_END

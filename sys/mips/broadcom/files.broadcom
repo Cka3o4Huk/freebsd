@@ -30,3 +30,6 @@ geom/geom_flashmap.c			standard
 dev/bhnd/cores/usb/bhnd_usb.c		optional usb
 dev/bhnd/cores/usb/bhnd_ehci.c		optional ehci
 dev/bhnd/cores/usb/bhnd_ohci.c		optional ohci
+
+# NVRAM
+dev/bhnd/cores/chipc/chipc_otp.c	optional nvram2env
