@@ -92,6 +92,9 @@ device		md
 # device 	bfe			# XXX will build both pci and siba
 device 		miibus			# attachments
 
+#NVRAM
+device		nvram2env
+
 # pci devices
 
 # USB
