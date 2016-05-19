@@ -36,6 +36,8 @@
 #define	CFE_MAGIC 	0x43464531
 #define	NVRAM_MAGIC	0x48534C46
 
+#define NVRAM_MAX_SIZE	0x10000
+
 int		chipc_slicer_spi(device_t dev, struct flash_slice *slices,
 		    int *nslices);
 int		chipc_slicer_cfi(device_t dev, struct flash_slice *slices,

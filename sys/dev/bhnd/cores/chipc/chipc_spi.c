@@ -70,7 +70,8 @@ static int	chipc_spi_transfer(device_t dev, device_t child,
 static int	chipc_spi_txrx(struct chipc_spi_softc *sc, uint8_t in,
 		    uint8_t* out);
 static int	chipc_spi_wait(struct chipc_spi_softc *sc);
-
+static device_t	chipc_spi_add_child(device_t dev, u_int order, const char *name,
+		    int unit);
 /*
  * **************************** IMPLEMENTATION ************************
  */
@@ -169,8 +170,28 @@ chipc_spi_attach(device_t dev)
 
 	flash_register_slicer(chipc_slicer_spi);
 	device_add_child(dev, "spibus", 0);
+	bus_generic_probe(dev);
 	return (bus_generic_attach(dev));
 }
+
+static device_t
+chipc_spi_add_child(device_t dev, u_int order, const char *name, int unit)
+{
+	struct chipc_spi_softc	*sc;
+	device_t		 child;
+
+	sc = device_get_softc(dev);
+	child = bus_generic_add_child(dev, order, name, unit);
+
+	if (child != NULL && strcmp(device_get_name(child), "nvram2env") == 0)
+		device_set_ivars(child, sc->sc_res);
+
+	return (child);
+}
+
+/*
+ * ****************************** SPI Implementation *************************
+ */
 
 static int
 chipc_spi_wait(struct chipc_spi_softc *sc)
@@ -263,6 +284,8 @@ static device_method_t chipc_spi_methods[] = {
 		DEVMETHOD(device_identify,	chipc_spi_identify),
 		DEVMETHOD(device_probe,		chipc_spi_probe),
 		DEVMETHOD(device_attach,	chipc_spi_attach),
+		/* bus */
+		DEVMETHOD(bus_add_child,	chipc_spi_add_child),
 		/* SPI */
 		DEVMETHOD(spibus_transfer,	chipc_spi_transfer),
 		DEVMETHOD_END

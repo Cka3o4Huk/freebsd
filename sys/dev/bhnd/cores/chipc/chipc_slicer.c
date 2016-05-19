@@ -45,6 +45,12 @@ __FBSDID("$FreeBSD$");
 #include <sys/systm.h>
 #include <sys/slicer.h>
 
+/*
+ * For temp
+ */
+#include <sys/malloc.h>
+#include <dev/bhnd/bhndvar.h>
+
 #include <machine/bus.h>
 
 #include <dev/bhnd/bhnd_debug.h>
@@ -56,6 +62,10 @@ __FBSDID("$FreeBSD$");
 
 static int	chipc_slicer_walk(device_t dev, struct resource* res,
 		    struct flash_slice *slices, int *nslices);
+
+static void	chipc_slicer_read_otp(struct resource *res, int offset,
+		    int limit);
+
 
 int
 chipc_slicer_cfi(device_t dev, struct flash_slice *slices, int *nslices)
@@ -161,6 +171,7 @@ chipc_slicer_walk(device_t dev, struct resource* res,
 			break;
 		case NVRAM_MAGIC:
 			BHND_TRACE("NVRAM found: %x", ofs);
+			chipc_slicer_read_otp(res, ofs, flash_size);
 			break;
 		default:
 			break;
@@ -169,4 +180,31 @@ chipc_slicer_walk(device_t dev, struct resource* res,
 
 	BHND_TRACE("slicer: done");
 	return (0);
+}
+
+static void
+chipc_slicer_read_otp(struct resource *res, int offset, int limit)
+{
+	int		 size;
+	uint32_t 	*buf;
+
+	if (offset > limit) {
+		return;
+	}
+
+	size = bus_read_4(res, offset + 4);
+	size = MIN(size, limit - offset);
+	size = MIN(size, NVRAM_MAX_SIZE);
+
+	size += 3;
+	size &= ~3;
+
+	BHND_TRACE("OTP NVRAM size = 0x%x\n", size);
+	buf = malloc(size, M_BHND, M_NOWAIT);
+	if (buf == NULL) {
+		BHND_ERROR("can't allocate memory for NVRAM buffer");
+		return;
+	}
+	bus_read_region_4(res, offset + 28, buf, (size >> 2));
+	BHND_TRACE("first: %s", (char*) buf);
 }

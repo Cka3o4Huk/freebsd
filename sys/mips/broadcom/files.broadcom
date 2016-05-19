@@ -45,3 +45,4 @@ dev/bhnd/nvram/bhnd_nvram_if.m		standard
 #dev/bhnd/siba/siba_subr.c		standard
 dev/bhnd/soc/bhnd_soc.c			standard
 #
+dev/bhnd/cores/chipc/chipc_otp.c	optional nvram2env
