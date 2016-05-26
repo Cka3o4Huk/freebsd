@@ -29,22 +29,31 @@
 
 #pragma once
 
+#include <sys/param.h>
+#include <sys/malloc.h>
+#include <sys/kernel.h>
+
 #define BGMAC_TIMEOUT 1000
 #define BGMAC_MAX_RSPEC	3
+
+MALLOC_DECLARE(M_BHND_BGMAC);
+MALLOC_DEFINE(M_BHND_BGMAC, "bgmac", "Structures allocated by bgmac driver");
 
 struct bgmac_softc {
 	device_t 		 dev;
 	device_t		 miibus;
+	device_t		 mdio;
 	struct resource		*mem;
 	struct resource		*irq;
 	void			*intrhand;
 	struct ifnet		*ifp;
 	u_char                   addr[6];
-	bus_dma_tag_t		 parent_tag, ring_tag;
-	bus_dmamap_t		 ring_map;
-	bus_addr_t		 rxdesc_ring_busaddr;
-	void			*buf;
-	void			*rxdesc_ring;
+	struct bcm_dma		*dma;
+//	bus_dma_tag_t		 parent_tag, ring_tag;
+//	bus_dmamap_t		 ring_map;
+//	bus_addr_t		 rxdesc_ring_busaddr;
+//	void			*buf;
+//	void			*rxdesc_ring;
 };
 
 typedef enum{

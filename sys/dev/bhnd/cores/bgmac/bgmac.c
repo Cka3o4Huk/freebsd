@@ -61,6 +61,9 @@
 #include <netinet/tcp.h>
 
 #include "miibus_if.h"
+#include "mdio_if.h"
+
+#include <dev/mdio/mdio.h>
 
 #include <dev/mii/mii.h>
 #include <dev/mii/miivar.h>
@@ -75,6 +78,8 @@
 
 #include "bgmacvar.h"
 #include "bgmacreg.h"
+
+#include "bcm_dma.h"
 
 struct resource_spec bgmac_rspec[BGMAC_MAX_RSPEC] = {
 	{ SYS_RES_MEMORY,	0,	RF_ACTIVE },
@@ -104,12 +109,13 @@ static int	bgmac_writereg(device_t dev, int phy, int reg, int val);
 static int	bgmac_phyreg_poll(device_t dev, uint32_t reg, uint32_t mask);
 static int	bgmac_phyreg_op(device_t dev, phymode op, int phy, int reg,
 		    int* val);
-
+#if 0
 /*
  * Driver callbacks for media status and change requests.
  */
 static int	bgmac_change(struct ifnet *);
 static void	bgmac_stat(struct ifnet *, struct ifmediareq *req);
+#endif
 
 /**
  * Interrupt flow
@@ -121,6 +127,13 @@ static int	bgmac_get_config(struct bgmac_softc *sc);
  * Internals
  */
 static int	bgmac_setup_interface(device_t dev);
+
+/*
+ * DMA
+ */
+//static int	bgmac_dma_alloc(struct bgmac_softc *sc);
+//static void	bgmac_dma_ring_addr(void *arg, bus_dma_segment_t *seg,
+//		    int nseg, int error);
 
 /*
  * **************************** Implementation ****************************
@@ -171,12 +184,24 @@ bgmac_attach(device_t dev)
 	 *  -
 	 */
 
+	/*
+	 * Write MAC address
+	 */
+
+	bus_write_4(sc->mem, 0x80c, *((uint32_t*)sc->addr));
+	bus_write_4(sc->mem, 0x810, *(((uint16_t*)sc->addr)+2));
+
 	bus_write_4(sc->mem, BGMAC_REG_INTR_RECV_LAZY,
 			1 << BGMAC_REG_INTR_RECV_LAZY_FC_SHIFT);
-	bus_write_4(sc->mem, BGMAC_REG_INTR_STATUS, BGMAC_REG_INTR_STATUS_ALL);
+	bus_write_4(sc->mem, BGMAC_REG_INTERRUPT_MASK,
+			BGMAC_REG_INTR_STATUS_ERR | BGMAC_REG_INTR_STATUS_RX);
 	uint32_t tmp = bus_read_4(sc->mem, BGMAC_REG_CMD_CFG);
 	bus_write_4(sc->mem, BGMAC_REG_CMD_CFG,
-	    tmp | BGMAC_REG_CMD_CFG_TX |BGMAC_REG_CMD_CFG_RX );
+	    tmp | BGMAC_REG_CMD_CFG_RX ); // BGMAC_REG_CMD_CFG_TX
+
+
+	sc->mdio = device_add_child(dev, "mdio", -1);
+	bus_generic_attach(dev);
 
 	return 0;
 }
@@ -204,12 +229,15 @@ bgmac_setup_interface(device_t dev)
 		return (ENXIO);
 	}
 
+#if 0
 	error = mii_attach(dev, &sc->miibus, ifp, bgmac_change, bgmac_stat,
 	    BMSR_DEFCAPMASK, MII_PHY_ANY, MII_OFFSET_ANY, 0);
 	if (error) {
 		BHND_ERROR_DEV(dev, "mii_attach failed: %d", error);
 		return error;
 	}
+#endif
+
 
 	ether_ifattach(ifp, sc->addr);
 
@@ -220,76 +248,94 @@ bgmac_setup_interface(device_t dev)
 	 */
 	error = bus_setup_intr(dev, sc->irq, INTR_TYPE_NET | INTR_MPSAFE,
 			NULL, bgmac_intr, sc, &sc->intrhand);
+	if (error) {
+		BHND_ERROR_DEV(dev, "can't setup interrupt");
+		return (error);
+	}
 
 	/*
 	 * TODO: ifmedia_init / add / set
 	 */
 
-	bgmac_dma_alloc(sc);
+	sc->dma = malloc(sizeof(struct bcm_dma), M_BHND_BGMAC, M_WAITOK);
+	if (sc->dma == NULL) {
+		BHND_ERROR_DEV(dev, "can't allocate memory for bcm_dma");
+		return (ENOMEM);
+	}
+
+	error = bcm_dma_attach(dev, sc->mem, sc->dma);
+	if (error) {
+		BHND_ERROR_DEV(dev, "error occurried during bcm_dma_attach: %d",
+		    error);
+		/*
+		 * TODO: cleanup
+		 */
+		return (error);
+	}
 
 	return (0);
 }
 
-static int
-bgmac_dma_alloc(struct bgmac_softc *sc)
-{
-	int	err;
-
-	/*
-	 * parent tag.  Apparently the chip cannot handle any DMA address
-	 * greater than 1GB.
-	 */
-	err = bus_dma_tag_create(bus_get_dma_tag(sc->dev), /* parent */
-	    1, 0,			/* alignment, boundary */
-	    BUS_SPACE_MAXADDR, 		/* lowaddr */
-	    BUS_SPACE_MAXADDR,		/* highaddr */
-	    NULL, NULL,			/* filter, filterarg */
-	    BUS_SPACE_MAXSIZE_32BIT,	/* maxsize */
-	    0,				/* nsegments */
-	    BUS_SPACE_MAXSIZE_32BIT,	/* maxsegsize */
-	    0,				/* flags */
-	    NULL, NULL,			/* lockfunc, lockarg */
-	    &sc->parent_tag);
-
-	if (err) {
-		BHND_ERROR_DEV(sc->dev, "can't create parent DMA tag: %d", err);
-		return (err);
-	}
-
-	err = bus_dma_tag_create(sc->parent_tag, /* parent */
-	    0x1000, 0,			/* alignment, boundary */
-	    BUS_SPACE_MAXADDR, 		/* lowaddr */
-	    BUS_SPACE_MAXADDR,		/* highaddr */
-	    NULL, NULL,			/* filter, filterarg */
-	    0x1000,			/* maxsize */                                                                                                                                                                                                                                                     rjxnz,	/* maxsize */
-	    1,				/* nsegments */
-	    BUS_SPACE_MAXSIZE_32BIT,	/* maxsegsize */
-	    0,				/* flags */
-	    NULL, NULL,			/* lockfunc, lockarg */
-	    &sc->ring_tag);
-
-	err = bus_dmamem_alloc(sc->ring_tag,
-				&sc->buf, BUS_DMA_NOWAIT,
-				   &sc->ring_map);
-	KASSERT(err==0, "panic");
-
-	err = bus_dmamap_load(sc->ring_tag, sc->ring_map, &sc->rxdesc_ring,
-			0x1000, bgmac_dma_ring_addr, &sc->rxdesc_ring_busaddr,
-			BUS_DMA_NOWAIT);
-
-	KASSERT(err==0, "panic");
-
-	return (0);
-}
-
-static void
-bgmac_dma_ring_addr(void *arg, bus_dma_segment_t *seg, int nseg, int error)
-{
-	if (!error) {
-		KASSERT(nseg == 1, ("too many segments(%d)\n", nseg));
-		*((bus_addr_t *)arg) = seg->ds_addr;
-	}
-}
+//static int
+//bgmac_dma_alloc(struct bgmac_softc *sc)
+//{
+//	int	err;
+//
+//	/*
+//	 * parent tag.  Apparently the chip cannot handle any DMA address
+//	 * greater than 1GB.
+//	 */
+//	err = bus_dma_tag_create(bus_get_dma_tag(sc->dev), /* parent */
+//	    1, 0,			/* alignment, boundary */
+//	    BUS_SPACE_MAXADDR, 		/* lowaddr */
+//	    BUS_SPACE_MAXADDR,		/* highaddr */
+//	    NULL, NULL,			/* filter, filterarg */
+//	    BUS_SPACE_MAXSIZE_32BIT,	/* maxsize */
+//	    0,				/* nsegments */
+//	    BUS_SPACE_MAXSIZE_32BIT,	/* maxsegsize */
+//	    0,				/* flags */
+//	    NULL, NULL,			/* lockfunc, lockarg */
+//	    &sc->parent_tag);
+//
+//	if (err) {
+//		BHND_ERROR_DEV(sc->dev, "can't create parent DMA tag: %d", err);
+//		return (err);
+//	}
+//
+//	err = bus_dma_tag_create(sc->parent_tag, /* parent */
+//	    0x1000, 0,			/* alignment, boundary */
+//	    BUS_SPACE_MAXADDR, 		/* lowaddr */
+//	    BUS_SPACE_MAXADDR,		/* highaddr */
+//	    NULL, NULL,			/* filter, filterarg */
+//	    0x1000,			/* maxsize */
+//	    1,				/* nsegments */
+//	    BUS_SPACE_MAXSIZE_32BIT,	/* maxsegsize */
+//	    0,				/* flags */
+//	    NULL, NULL,			/* lockfunc, lockarg */
+//	    &sc->ring_tag);
+//
+//	err = bus_dmamem_alloc(sc->ring_tag,
+//				&sc->buf, BUS_DMA_NOWAIT,
+//				   &sc->ring_map);
+//	KASSERT(err==0, ("panic"));
+//
+//	err = bus_dmamap_load(sc->ring_tag, sc->ring_map, &sc->rxdesc_ring,
+//			0x1000, bgmac_dma_ring_addr, &sc->rxdesc_ring_busaddr,
+//			BUS_DMA_NOWAIT);
+//
+//	KASSERT(err==0, ("panic"));
+//
+//	return (0);
+//}
+//
+//static void
+//bgmac_dma_ring_addr(void *arg, bus_dma_segment_t *seg, int nseg, int error)
+//{
+//	if (!error) {
+//		KASSERT(nseg == 1, ("too many segments(%d)\n", nseg));
+//		*((bus_addr_t *)arg) = seg->ds_addr;
+//	}
+//}
 
 
 /*
@@ -327,7 +373,7 @@ bgmac_phyreg_op(device_t dev, phymode op, int phy, int reg, int* val)
 
 	/* Set address on PHY control register */
 	tmp = bus_read_4(sc->mem, BGMAC_REG_PHY_CONTROL);
-	tmp = (tmp & (~BGMAC_REG_PHY_ACCESS_ADDR)) | phy;
+	tmp = (tmp & (~BGMAC_REG_PHY_CONTROL_ADDR)) | phy;
 
 	bus_write_4(sc->mem, BGMAC_REG_PHY_CONTROL, tmp);
 
@@ -335,7 +381,7 @@ bgmac_phyreg_op(device_t dev, phymode op, int phy, int reg, int* val)
 	tmp = BGMAC_REG_PHY_ACCESS_START;
 	if (op == PHY_WRITE) {
 		tmp |= BGMAC_REG_PHY_ACCESS_WRITE;
-		tmp |= (*val & BGMAC_REG_PHY_ACCESS_DATA);
+		tmp |= ((*val) & BGMAC_REG_PHY_ACCESS_DATA);
 	}
 
 	tmp |= (phy << BGMAC_REG_PHY_ACCESS_ADDR_SHIFT);
@@ -365,6 +411,7 @@ bgmac_readreg(device_t dev, int phy, int reg)
 	int tmp;
 
 	if (bgmac_phyreg_op(dev, PHY_READ, phy, reg, &tmp)) {
+		device_printf(dev, "phy_readreg error!!!\n");
 		return (-1);
 	}
 
@@ -384,6 +431,7 @@ bgmac_writereg(device_t dev, int phy, int reg, int val)
 	return (0);
 }
 
+#if 0
 /**
  * Media
  */
@@ -400,6 +448,7 @@ bgmac_stat(struct ifnet *ifp, struct ifmediareq *req)
 	device_printf(((struct bgmac_softc*)ifp->if_softc)->dev, "stat!\n");
 	return;
 }
+#endif
 
 /**
  * Intr
@@ -409,6 +458,7 @@ static void
 bgmac_intr(void *arg)
 {
 	struct bgmac_softc	*sc;
+	uint32_t		 intr_status;
 
 	sc = (struct bgmac_softc*)arg;
 	/**
@@ -417,7 +467,24 @@ bgmac_intr(void *arg)
 	 * Handle tr
 	 * Handle errors
 	 */
-	device_printf(sc->dev, "bgmac_intr\n");
+
+	intr_status = bus_read_4(sc->mem, BGMAC_REG_INTR_STATUS);
+	device_printf(sc->dev, "bgmac_intr: 0x%x\n", intr_status);
+	bus_write_4(sc->mem, BGMAC_REG_INTR_STATUS, intr_status);
+
+	/* disable interrupt for a while */
+	bus_write_4(sc->mem, BGMAC_REG_INTERRUPT_MASK, 0);
+	bus_read_4(sc->mem, BGMAC_REG_INTERRUPT_MASK);
+
+	if (intr_status & BGMAC_REG_INTR_STATUS_RX) {
+		device_printf(sc->dev, "RX!\n");
+		bcm_dma_rx(sc->dma->rx);
+	}
+	/* enable interrupt */
+	bus_write_4(sc->mem, BGMAC_REG_INTERRUPT_MASK, BGMAC_REG_INTR_STATUS_RX
+	   | BGMAC_REG_INTR_STATUS_ERR);
+	bus_read_4(sc->mem, BGMAC_REG_INTERRUPT_MASK);
+
 	return;
 }
 
@@ -462,6 +529,10 @@ static device_method_t bgmac_methods[] = {
 		DEVMETHOD(miibus_readreg, 	bgmac_readreg),
 		DEVMETHOD(miibus_writereg, 	bgmac_writereg),
 
+		/** MDIO interface **/
+		DEVMETHOD(mdio_readreg,		bgmac_readreg),
+		DEVMETHOD(mdio_writereg,	bgmac_writereg),
+
 		DEVMETHOD_END
 };
 
@@ -470,5 +541,7 @@ devclass_t bhnd_bgmac_devclass;
 DEFINE_CLASS_0(bhnd_bgmac, bgmac_driver, bgmac_methods,
 		sizeof(struct bgmac_softc));
 DRIVER_MODULE(bhnd_bgmac, bhnd, bgmac_driver, bhnd_bgmac_devclass, 0, 0);
-DRIVER_MODULE(miibus, bhnd_bgmac, miibus_driver, miibus_devclass, 0, 0);
+//DRIVER_MODULE(miibus, bhnd_bgmac, miibus_driver, miibus_devclass, 0, 0);
+DRIVER_MODULE(mdio, bhnd_bgmac, mdio_driver, mdio_devclass, 0, 0);
+
 MODULE_VERSION(bhnd_bgmac, 1);

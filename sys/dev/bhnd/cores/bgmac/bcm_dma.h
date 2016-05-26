@@ -8,99 +8,21 @@
 #ifndef SYS_DEV_BHND_CORES_BGMAC_BCM_DMA_H_
 #define SYS_DEV_BHND_CORES_BGMAC_BCM_DMA_H_
 
+#include <sys/param.h>
+#include <sys/systm.h>
+#include <sys/mbuf.h>
+
 #define	BCM_DMA_30BIT			30
 #define	BCM_DMA_32BIT			32
 #define	BCM_DMA_64BIT			64
 
-struct bcm_dmadesc_meta {
-	bus_dmamap_t			mt_dmap;
-	bus_addr_t			mt_paddr;
-	struct mbuf			*mt_m;
-	struct ieee80211_node		*mt_ni;
-	uint8_t				mt_txtype;
-#define	BCM_DMADESC_METATYPE_HEADER	0
-#define	BCM_DMADESC_METATYPE_BODY	1
-	uint8_t				mt_islast;
-};
 
 #define	BCM_DMAINTR_FATALMASK	\
 	((1 << 10) | (1 << 11) | (1 << 12) | (1 << 14) | (1 << 15))
 #define	BCM_DMAINTR_NONFATALMASK	(1 << 13)
 #define	BCM_DMAINTR_RX_DONE		(1 << 16)
 
-#define	BCM_DMA32_DCTL_BYTECNT		0x00001fff
-#define	BCM_DMA32_DCTL_ADDREXT_MASK	0x00030000
-#define	BCM_DMA32_DCTL_ADDREXT_SHIFT	16
-#define	BCM_DMA32_DCTL_DTABLEEND	0x10000000
-#define	BCM_DMA32_DCTL_IRQ		0x20000000
-#define	BCM_DMA32_DCTL_FRAMEEND		0x40000000
-#define	BCM_DMA32_DCTL_FRAMESTART	0x80000000
-struct bcm_dmadesc32 {
-	uint32_t			control;
-	uint32_t			address;
-} __packed;
-
-#define	BCM_DMA64_DCTL0_DTABLEEND	0x10000000
-#define	BCM_DMA64_DCTL0_IRQ		0x20000000
-#define	BCM_DMA64_DCTL0_FRAMEEND	0x40000000
-#define	BCM_DMA64_DCTL0_FRAMESTART	0x80000000
-#define	BCM_DMA64_DCTL1_BYTECNT		0x00001fff
-#define	BCM_DMA64_DCTL1_ADDREXT_MASK	0x00030000
-#define	BCM_DMA64_DCTL1_ADDREXT_SHIFT	16
-struct bcm_dmadesc64 {
-	uint32_t			control0;
-	uint32_t			control1;
-	uint32_t			address_low;
-	uint32_t			address_high;
-} __packed;
-
-struct bcm_dmadesc_generic {
-	union {
-		struct bcm_dmadesc32 dma32;
-		struct bcm_dmadesc64 dma64;
-	} __packed dma;
-} __packed;
-
-struct bcm_dma_ring;
-
-struct bcm_dma_ring {
-	struct bcm_mac			*dr_mac;
-	const struct bcm_dma_ops	*dr_ops;
-	struct bcm_dmadesc_meta		*dr_meta;
-	void				*dr_txhdr_cache;
-	bus_dma_tag_t			dr_ring_dtag;
-	bus_dma_tag_t			dr_txring_dtag;
-	bus_dmamap_t			dr_spare_dmap; /* only for RX */
-	bus_dmamap_t			dr_ring_dmap;
-	bus_addr_t			dr_txring_paddr;
-	void				*dr_ring_descbase;
-	bus_addr_t			dr_ring_dmabase;
-	int				dr_numslots;
-	int				dr_usedslot;
-	int				dr_curslot;
-	uint32_t			dr_frameoffset;
-	uint16_t			dr_rx_bufsize;
-	uint16_t			dr_base;
-	int				dr_index;
-	uint8_t				dr_tx;
-	uint8_t				dr_stop;
-	int				dr_type;
-
-	void				(*getdesc)(struct bcm_dma_ring *,
-					    int, struct bcm_dmadesc_generic **,
-					    struct bcm_dmadesc_meta **);
-	void				(*setdesc)(struct bcm_dma_ring *,
-					    struct bcm_dmadesc_generic *,
-					    bus_addr_t, uint16_t, int, int,
-					    int);
-	void				(*start_transfer)(struct bcm_dma_ring *,
-					    int);
-	void				(*suspend)(struct bcm_dma_ring *);
-	void				(*resume)(struct bcm_dma_ring *);
-	int				(*get_curslot)(struct bcm_dma_ring *);
-	void				(*set_curslot)(struct bcm_dma_ring *,
-					    int);
-};
+#define	BCM_DMA_BIT_MASK(n)		(((n) == 64) ? ~0ULL : ((1ULL<<(n))-1))
 
 struct bcm_dma {
 	int				dmatype;
@@ -113,6 +35,69 @@ struct bcm_dma {
 	struct bcm_dma_ring		*rx;
 	uint64_t			lastseq;	/* XXX FIXME */
 };
+
+#define BCM_FRAME_OFFSET		0x1e
+
+struct bcm_rx_header {
+	uint16_t len;
+	uint16_t flags;
+};
+
+struct bwn_plcp6 {
+	union {
+		uint32_t		data;
+		uint8_t			raw[6];
+	} __packed o;
+} __packed;
+
+#define BCM_ASSERT_LOCKED(x)
+#define BCM_DMA_ALIGN			0x1000
+
+#define	BCM_DMA_RINGMEMSIZE		PAGE_SIZE
+
+#define	BCM_TXRING_SLOTS		64
+#define	BCM_RXRING_SLOTS		64
+
+/* 32-bit DMA */
+
+#define	BCM_DMA32_BASE_RX_SHIFT		0x010
+#define	BCM_DMA32_BASE0			0x200
+#define	BCM_DMA32_BASE1			0x220
+#define	BCM_DMA32_BASE2			0x240
+#define	BCM_DMA32_BASE3			0x260
+#define	BCM_DMA32_BASE4			0x280
+#define	BCM_DMA32_BASE5			0x2a0
+/* 64-bit DMA */
+#define	BCM_DMA64_BASE_RX_SHIFT		0x020
+#define	BCM_DMA64_BASE0			0x200
+#define	BCM_DMA64_BASE1			0x240
+#define	BCM_DMA64_BASE2			0x280
+#define	BCM_DMA64_BASE3			0x2c0
+#define	BCM_DMA64_BASE4			0x300
+#define	BCM_DMA64_BASE5			0x340
+
+#define	N(a)			(sizeof(a) / sizeof(a[0]))
+
+struct bcm_dma_ring;
+struct bcm_dmadesc_generic;
+struct bcm_dmadesc_meta;
+
+void		bcm_dma_rx(struct bcm_dma_ring *dr);
+
+int		bcm_dma_attach(device_t dev, struct resource *res,
+		    struct bcm_dma *dma);
+uint16_t	bcm_dma_base(int, int, int);
+int		bcm_dma_rx_newbuf(struct bcm_dma_ring *dr,
+		    struct bcm_dmadesc_generic *desc,
+		    struct bcm_dmadesc_meta *meta, int init);
+int		bcm_dma_rx_reset(struct bcm_dma_ring* ring,
+		    uint16_t base, int type);
+
+void		bcm_dmamap_callback(void *arg, bus_dma_segment_t *seg,
+		    int nseg, int error);
+void		bcm_dmamap_callback_mbuf(void *arg, bus_dma_segment_t *seg,
+		    int nseg, bus_size_t mapsz __unused, int error);
+
 
 
 #endif /* SYS_DEV_BHND_CORES_BGMAC_BCM_DMA_H_ */
