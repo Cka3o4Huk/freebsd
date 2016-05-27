@@ -258,6 +258,19 @@ bcm_dma_rxeof(struct bcm_dma *dma, struct bcm_dma_ring *dr, int *slot)
 
 	rxhdr = mtod(m, struct bcm_rx_header *);
 	len = le16toh(rxhdr->len);
+	device_printf(dev, "len: %d\n", len);
+#define HEXDUMP(_buf, _len) do { \
+  { \
+        size_t __tmp; \
+        const char *__buf = (const char *)_buf; \
+        for (__tmp = 0; __tmp < _len; __tmp++) \
+                printf("%02hhx ", *__buf++); \
+    printf("\n"); \
+  } \
+} while(0)
+
+	HEXDUMP(rxhdr,0x10);
+#undef HEXDUMP
 	if (len <= 0) {
 		/*
 		 * TODO: add counters

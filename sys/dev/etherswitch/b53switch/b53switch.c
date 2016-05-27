@@ -108,6 +108,9 @@ static int	b53switch_readreg(device_t dev, int phy, int reg);
 static void			b53switch_tick(void *arg);
 static void			b53switch_miipollstat(struct b53switch_softc *sc);
 
+static int			b53switch_getvgroup(device_t dev,
+				    etherswitch_vlangroup_t *vg);
+
 static int
 b53switch_probe(device_t dev)
 {
@@ -200,6 +203,17 @@ b53switch_attach(device_t dev)
 	//ARSWITCH_LOCK(sc);
 	b53switch_tick(sc);
 	//ARSWITCH_UNLOCK(sc);
+
+
+	for(int i = 0; i< 10; i++) {
+		struct etherswitch_vlangroup vg;
+
+		vg.es_vlangroup = i;
+		b53switch_getvgroup(dev, &vg);
+		printf("[%d] %x %x \n", i,
+				vg.es_member_ports,
+				vg.es_untagged_ports);
+	}
 
 
 	return (0);
@@ -1263,7 +1277,6 @@ b53switch_getvgroup(device_t dev, etherswitch_vlangroup_t *vg)
 	int			 error;
 
 	sc = device_get_softc(dev);
-
 
 	error = 0;
 	vid = vg->es_vlangroup;
