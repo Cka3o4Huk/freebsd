@@ -57,7 +57,9 @@ __FBSDID("$FreeBSD$");
 #include <dev/cfi/cfi_reg.h>
 #include <dev/cfi/cfi_var.h>
 
-static void cfi_add_sysctls(struct cfi_softc *);
+static void	cfi_add_sysctls(struct cfi_softc *);
+static void	cfi_write_op(struct cfi_softc *sc, u_int ofs, u_int val,
+		    u_int buswidth);
 
 extern struct cdevsw cfi_cdevsw;
 
@@ -124,25 +126,42 @@ static void
 cfi_write(struct cfi_softc *sc, u_int ofs, u_int val)
 {
 
-	ofs &= ~(sc->sc_width - 1);
-	switch (sc->sc_width) {
+	cfi_write_op(sc, ofs, val, sc->sc_width);
+}
+
+static void
+cfi_write_op(struct cfi_softc *sc, u_int ofs, u_int val, u_int buswidth)
+{
+	uint32_t	data;
+	int		byteswap_req; /* or intermediate bus make byte swap? */
+
+#ifdef CFI_HARDWAREBYTESWAP
+	byteswap_req = 0;
+#else
+	byteswap_req = 1;
+#endif
+
+	data = val;
+	if (byteswap_req)
+		switch (buswidth) {
+		case 2:
+			data = htole16(data);
+			break;
+		case 4:
+			data = htole32(data);
+			break;
+		}
+
+	ofs &= ~(buswidth - 1);
+	switch (buswidth) {
 	case 1:
 		bus_space_write_1(sc->sc_tag, sc->sc_handle, ofs, val);
 		break;
 	case 2:
-#ifdef CFI_HARDWAREBYTESWAP
 		bus_space_write_2(sc->sc_tag, sc->sc_handle, ofs, val);
-#else
-		bus_space_write_2(sc->sc_tag, sc->sc_handle, ofs, htole16(val));
-
-#endif
 		break;
 	case 4:
-#ifdef CFI_HARDWAREBYTESWAP
 		bus_space_write_4(sc->sc_tag, sc->sc_handle, ofs, val);
-#else
-		bus_space_write_4(sc->sc_tag, sc->sc_handle, ofs, htole32(val));
-#endif
 		break;
 	}
 }
@@ -154,8 +173,8 @@ static void
 cfi_reset_default(struct cfi_softc *sc)
 {
 
-	cfi_write(sc, 0, CFI_BCS_READ_ARRAY2);
-	cfi_write(sc, 0, CFI_BCS_READ_ARRAY);
+	cfi_write_op(sc, 0, CFI_BCS_READ_ARRAY2, sc->sc_buswidth);
+	cfi_write_op(sc, 0, CFI_BCS_READ_ARRAY, sc->sc_buswidth);
 }
 
 uint8_t
@@ -163,7 +182,8 @@ cfi_read_qry(struct cfi_softc *sc, u_int ofs)
 {
 	uint8_t val;
  
-	cfi_write(sc, CFI_QRY_CMD_ADDR * sc->sc_width, CFI_QRY_CMD_DATA); 
+	cfi_write_op(sc, CFI_QRY_CMD_ADDR * sc->sc_width, CFI_QRY_CMD_DATA,
+			sc->sc_buswidth);
 	val = cfi_read(sc, ofs * sc->sc_width);
 	cfi_reset_default(sc);
 	return (val);
@@ -198,11 +218,12 @@ cfi_fmtsize(uint32_t sz)
 int
 cfi_probe(device_t dev)
 {
-	char desc[80];
-	struct cfi_softc *sc;
-	char *vend_str;
-	int error;
-	uint16_t iface, vend;
+	char			 desc[80];
+	struct cfi_softc	*sc;
+	char			*vend_str;
+	int			 error;
+	uint16_t		 iface, vend;
+	u_int			 init_width, init_buswidth; /* temporary */
 
 	sc = device_get_softc(dev);
 	sc->sc_dev = dev;
@@ -216,18 +237,47 @@ cfi_probe(device_t dev)
 	sc->sc_tag = rman_get_bustag(sc->sc_res);
 	sc->sc_handle = rman_get_bushandle(sc->sc_res);
 
-	if (sc->sc_width == 0) {
-		sc->sc_width = 1;
-		while (sc->sc_width <= 4) {
+	init_width = sc->sc_width;
+	init_buswidth = sc->sc_buswidth;
+
+	if (init_width == 0 || init_buswidth == 0) {
+		/*
+		 * try to find device/bus configuration
+		 *
+		 * initial probe values:
+		 *  - device width: can't be less than bus width
+		 *  - bus width: device width if not defined
+		 */
+		sc->sc_width = MAX(MAX(init_buswidth, init_width), 1) ;
+		if (init_buswidth == 0)
+			sc->sc_buswidth = sc->sc_width;
+		for (;;) {
 			if (cfi_read_qry(sc, CFI_QRY_IDENT) == 'Q')
-				break;
-			sc->sc_width <<= 1;
+				break; /* Yes, we're lucky */
+
+			/* next values to probe */
+			if (sc->sc_buswidth > 1 && init_buswidth == 0) {
+				/* let's reduce bus width */
+				sc->sc_buswidth >>=1;
+			} else if (sc->sc_width < 4 && init_width == 0) {
+				/* let's increase device width */
+				sc->sc_width <<= 1;
+				if (init_buswidth == 0)
+					sc->sc_buswidth = sc->sc_width;
+			} else {
+				/* give up */
+				error = ENXIO;
+				goto out;
+			}
 		}
-	} else if (cfi_read_qry(sc, CFI_QRY_IDENT) != 'Q') {
+	}
+
+	if (sc->sc_width > 4) {
 		error = ENXIO;
 		goto out;
 	}
-	if (sc->sc_width > 4) {
+
+	if (cfi_read_qry(sc, CFI_QRY_IDENT) != 'Q') {
 		error = ENXIO;
 		goto out;
 	}
