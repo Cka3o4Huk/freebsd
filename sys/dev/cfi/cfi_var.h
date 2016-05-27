@@ -61,6 +61,7 @@ struct cfi_softc {
 
 	u_int		sc_size;	/* Flash size. */
 	u_int		sc_width;	/* Interface width. */
+	u_int		sc_buswidth; 	/* Bus width */
 	u_int		sc_regions;	/* Erase regions. */
 	struct cfi_region *sc_region;	/* Array of region info. */
 
