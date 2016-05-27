@@ -60,6 +60,9 @@ chipc_otp_identify(driver_t *driver, device_t parent)
 	struct chipc_caps	*caps;
 	device_t		 nvram;
 
+	if (device_find_child(parent, "nvram2env", -1) != NULL)
+		return;
+
 	caps = BHND_CHIPC_GET_CAPS(parent);
 	if (caps == NULL) {
 		device_printf(parent, "no BHND_CHIPC_GET_CAPS found\n");
