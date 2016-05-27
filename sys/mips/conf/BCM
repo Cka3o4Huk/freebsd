@@ -16,7 +16,7 @@ include		"../broadcom/std.broadcom"
 options 	CFE
 options 	ALT_BREAK_TO_DEBUGGER
 options 	BREAK_TO_DEBUGGER
-options		BOOTVERBOSE=0
+options		BOOTVERBOSE=1
 
 makeoptions	INTRNG
 options		INTRNG
@@ -51,7 +51,7 @@ options		ROOTDEVNAME=\"ufs:ufs/FBSD\"	# assumes FW built by
 options 	INVARIANTS
 options 	INVARIANT_SUPPORT
 
-#options	BHND_LOGLEVEL=BHND_DEBUG_LEVEL
+options	BHND_LOGLEVEL=BHND_TRACE_LEVEL
 #options 	BUS_DEBUG
 #makeoptions	BUS_DEBUG
 #options	VERBOSE_SYSINIT
