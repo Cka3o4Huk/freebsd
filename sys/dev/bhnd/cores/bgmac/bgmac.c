@@ -88,7 +88,7 @@ struct resource_spec bgmac_rspec[BGMAC_MAX_RSPEC] = {
 };
 
 struct bhnd_device bgmac_match[] = {
-	BHND_DEVICE(GMAC, "BHND Gigabit MAC", NULL, NULL),
+	BHND_DEVICE(GMAC, "BHND Gigabit MAC", NULL),
 	BHND_DEVICE_END,
 };
 
