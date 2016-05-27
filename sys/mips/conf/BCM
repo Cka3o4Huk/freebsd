@@ -17,7 +17,7 @@ device		cfe
 
 options 	ALT_BREAK_TO_DEBUGGER
 options 	BREAK_TO_DEBUGGER
-options		BOOTVERBOSE=0
+options		BOOTVERBOSE=1
 
 makeoptions	TRAMPLOADADDR=0x80900000
 makeoptions	DEBUG="-g3"		#Build kernel with gdb(1) debug symbols
@@ -50,7 +50,7 @@ options		ROOTDEVNAME=\"ufs:ufs/FBSD\"	# assumes FW built by
 options 	INVARIANTS
 options 	INVARIANT_SUPPORT
 
-#options	BHND_LOGLEVEL=BHND_DEBUG_LEVEL
+options	BHND_LOGLEVEL=BHND_TRACE_LEVEL
 #options 	BUS_DEBUG
 #makeoptions	BUS_DEBUG
 options 	EARLY_PRINTF
