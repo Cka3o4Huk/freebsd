@@ -184,4 +184,10 @@
 #define	NO_FUEWORD	1
 #endif
 
+#if !defined(__mips_n32) && !defined(__mips_n64)
+#ifndef NO_64BIT_ATOMICS
+#define NO_64BIT_ATOMICS
+#endif
+#endif
+
 #endif /* !_MIPS_INCLUDE_PARAM_H_ */
