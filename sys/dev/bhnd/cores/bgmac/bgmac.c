@@ -115,7 +115,7 @@ static void	bgmac_stat(struct ifnet *, struct ifmediareq *req);
  * Interrupt flow
  */
 static void	bgmac_intr(void *arg);
-
+static int	bgmac_get_config(struct bgmac_softc *sc);
 
 /**
  * Internals
@@ -171,6 +171,13 @@ bgmac_attach(device_t dev)
 	 *  -
 	 */
 
+	bus_write_4(sc->mem, BGMAC_REG_INTR_RECV_LAZY,
+			1 << BGMAC_REG_INTR_RECV_LAZY_FC_SHIFT);
+	bus_write_4(sc->mem, BGMAC_REG_INTR_STATUS, BGMAC_REG_INTR_STATUS_ALL);
+	uint32_t tmp = bus_read_4(sc->mem, BGMAC_REG_CMD_CFG);
+	bus_write_4(sc->mem, BGMAC_REG_CMD_CFG,
+	    tmp | BGMAC_REG_CMD_CFG_TX |BGMAC_REG_CMD_CFG_RX );
+
 	return 0;
 }
 
@@ -189,6 +196,13 @@ bgmac_setup_interface(device_t dev)
 	ifp->if_softc = sc;
 
 	if_initname(ifp, device_get_name(dev), device_get_unit(dev));
+
+	error = bgmac_get_config(sc);
+	if (error) {
+		BHND_ERROR_DEV(dev, "can't get bgmac config from NVRAM: %d",
+		    error);
+		return (ENXIO);
+	}
 
 	error = mii_attach(dev, &sc->miibus, ifp, bgmac_change, bgmac_stat,
 	    BMSR_DEFCAPMASK, MII_PHY_ANY, MII_OFFSET_ANY, 0);
@@ -211,8 +225,72 @@ bgmac_setup_interface(device_t dev)
 	 * TODO: ifmedia_init / add / set
 	 */
 
+	bgmac_dma_alloc(sc);
+
 	return (0);
 }
+
+static int
+bgmac_dma_alloc(struct bgmac_softc *sc)
+{
+	int	err;
+
+	/*
+	 * parent tag.  Apparently the chip cannot handle any DMA address
+	 * greater than 1GB.
+	 */
+	err = bus_dma_tag_create(bus_get_dma_tag(sc->dev), /* parent */
+	    1, 0,			/* alignment, boundary */
+	    BUS_SPACE_MAXADDR, 		/* lowaddr */
+	    BUS_SPACE_MAXADDR,		/* highaddr */
+	    NULL, NULL,			/* filter, filterarg */
+	    BUS_SPACE_MAXSIZE_32BIT,	/* maxsize */
+	    0,				/* nsegments */
+	    BUS_SPACE_MAXSIZE_32BIT,	/* maxsegsize */
+	    0,				/* flags */
+	    NULL, NULL,			/* lockfunc, lockarg */
+	    &sc->parent_tag);
+
+	if (err) {
+		BHND_ERROR_DEV(sc->dev, "can't create parent DMA tag: %d", err);
+		return (err);
+	}
+
+	err = bus_dma_tag_create(sc->parent_tag, /* parent */
+	    0x1000, 0,			/* alignment, boundary */
+	    BUS_SPACE_MAXADDR, 		/* lowaddr */
+	    BUS_SPACE_MAXADDR,		/* highaddr */
+	    NULL, NULL,			/* filter, filterarg */
+	    0x1000,			/* maxsize */                                                                                                                                                                                                                                                     rjxnz,	/* maxsize */
+	    1,				/* nsegments */
+	    BUS_SPACE_MAXSIZE_32BIT,	/* maxsegsize */
+	    0,				/* flags */
+	    NULL, NULL,			/* lockfunc, lockarg */
+	    &sc->ring_tag);
+
+	err = bus_dmamem_alloc(sc->ring_tag,
+				&sc->buf, BUS_DMA_NOWAIT,
+				   &sc->ring_map);
+	KASSERT(err==0, "panic");
+
+	err = bus_dmamap_load(sc->ring_tag, sc->ring_map, &sc->rxdesc_ring,
+			0x1000, bgmac_dma_ring_addr, &sc->rxdesc_ring_busaddr,
+			BUS_DMA_NOWAIT);
+
+	KASSERT(err==0, "panic");
+
+	return (0);
+}
+
+static void
+bgmac_dma_ring_addr(void *arg, bus_dma_segment_t *seg, int nseg, int error)
+{
+	if (!error) {
+		KASSERT(nseg == 1, ("too many segments(%d)\n", nseg));
+		*((bus_addr_t *)arg) = seg->ds_addr;
+	}
+}
+
 
 /*
  * **************************** MII BUS Functions ****************************
@@ -340,6 +418,37 @@ bgmac_intr(void *arg)
 	 * Handle errors
 	 */
 	device_printf(sc->dev, "bgmac_intr\n");
+	return;
+}
+
+static int
+bgmac_get_config(struct bgmac_softc *sc)
+{
+	char	*tmp;
+	char	 macaddr[18];
+
+	tmp = kern_getenv("sb/1/macaddr");
+	if (tmp == NULL)
+		return (-1);
+
+	if (strlen(tmp) != strlen("00:00:00:00:00:00"))
+		return (-2);
+
+	strcpy(macaddr, tmp);
+
+	for (int i = 2; i < strlen(macaddr); i+=3) {
+		if (macaddr[i] != ':')
+			return (-3);
+		macaddr[i] = '\0';
+	}
+
+	tmp = macaddr;
+	for (int i = 0; i < 6; i++) {
+		sc->addr[i] = (u_char)strtoul(tmp, NULL, 16);
+		tmp += 3;
+	}
+
+	return (0);
 }
 
 /**

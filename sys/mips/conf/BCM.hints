@@ -4,3 +4,4 @@ hint.bhnd_soc.0.at="nexus0"
 hint.bhnd_soc.0.maddr="0x00000000" 
 hint.bhnd_soc.0.msize="0x20000000"
 
+hine.bgmac.0.irq=4

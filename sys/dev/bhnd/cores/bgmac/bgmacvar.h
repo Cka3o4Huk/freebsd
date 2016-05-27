@@ -39,7 +39,12 @@ struct bgmac_softc {
 	struct resource		*irq;
 	void			*intrhand;
 	struct ifnet		*ifp;
-	u_char                  addr[6];
+	u_char                   addr[6];
+	bus_dma_tag_t		 parent_tag, ring_tag;
+	bus_dmamap_t		 ring_map;
+	bus_addr_t		 rxdesc_ring_busaddr;
+	void			*buf;
+	void			*rxdesc_ring;
 };
 
 typedef enum{
