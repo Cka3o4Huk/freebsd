@@ -59,7 +59,6 @@ options 	INVARIANT_SUPPORT
 
 device		pci
 
-#device		bgmac			# Broadcom GMAC - not yet
 device		bhnd
 
 device		mdio
