@@ -3,5 +3,5 @@
 
 machine		mips mipsel
 
-cpu		CPU_MIPS74K
+cpu		CPU_MIPS24K
 files		"../broadcom/files.broadcom"

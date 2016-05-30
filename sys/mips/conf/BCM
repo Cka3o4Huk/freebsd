@@ -21,7 +21,7 @@ options		BOOTVERBOSE=0
 makeoptions	INTRNG
 options		INTRNG
 
-makeoptions	TRAMPLOADADDR=0x80800000
+makeoptions	TRAMPLOADADDR=0x80900000
 makeoptions	DEBUG="-g3"		#Build kernel with gdb(1) debug symbols
 makeoptions	MODULES_OVERRIDE=""
 
