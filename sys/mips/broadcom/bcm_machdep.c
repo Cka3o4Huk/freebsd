@@ -211,7 +211,7 @@ platform_start(__register_t a0, __register_t a1, __register_t a2,
 	mips_pcpu0_init();
 
 	socinfo = bcm_get_socinfo();
-	platform_counter_freq = socinfo->cpurate * 1000 * 1000; /* BCM4718 is 480MHz */
+	platform_counter_freq = socinfo->cpurate * 1000 * 1000;
 
 	mips_timer_early_init(platform_counter_freq);
 
