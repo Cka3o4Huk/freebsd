@@ -487,7 +487,8 @@ mips_init(void)
 
 		result = cfe_enummem(i / 2, 0, &addr, &len, &type);
 		if (result < 0) {
-			BCM_TRACE("There is no phys memory for: %d\n", i);
+			BCM_TRACE("There is no phys memory for %d: err = %d\n",
+			    i, result);
 			phys_avail[i] = phys_avail[i + 1] = 0;
 			break;
 		}
@@ -512,6 +513,21 @@ mips_init(void)
 
 		phys_avail[i + 1] = addr + len;
 		physmem += len;
+	}
+
+	if (physmem == 0) {
+		/* Don't give up */
+		char 	memsz[16];
+		int	result;
+
+		bzero(memsz, 16);
+		result = cfe_getenv("CFE_MEMORYSIZE", memsz, 16);
+		BCM_TRACE("CFE_MEMORYSIZE: %d %s\n", result, memsz);
+		if (result == 0) {
+			physmem = strtoul(memsz, NULL, 10);
+			phys_avail[i++] = 0;
+			phys_avail[i++] = physmem;
+		}
 	}
 
 	BCM_TRACE("Total phys memory is : %ld\n", physmem);
