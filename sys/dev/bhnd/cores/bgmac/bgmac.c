@@ -179,17 +179,7 @@ bgmac_attach(device_t dev)
 	sc->irq = res[1];
 
 	error = bgmac_setup_interface(dev);
-	/* TODO
-	 *  - init interrupt handler
-	 *  -
-	 */
 
-	/*
-	 * Write MAC address
-	 */
-
-	bus_write_4(sc->mem, 0x80c, *((uint32_t*)sc->addr));
-	bus_write_4(sc->mem, 0x810, *(((uint16_t*)sc->addr)+2));
 
 	bus_write_4(sc->mem, BGMAC_REG_INTR_RECV_LAZY,
 			1 << BGMAC_REG_INTR_RECV_LAZY_FC_SHIFT);
@@ -197,13 +187,25 @@ bgmac_attach(device_t dev)
 			BGMAC_REG_INTR_STATUS_ERR | BGMAC_REG_INTR_STATUS_RX);
 	uint32_t tmp = bus_read_4(sc->mem, BGMAC_REG_CMD_CFG);
 	bus_write_4(sc->mem, BGMAC_REG_CMD_CFG,
-	    tmp | BGMAC_REG_CMD_CFG_RX ); // BGMAC_REG_CMD_CFG_TX
+	    tmp | BGMAC_REG_CMD_CFG_RX | BGMAC_REG_CMD_CFG_PROM ); // BGMAC_REG_CMD_CFG_TX
 
+	device_printf(dev, "cmd_cfg: %x\n", bus_read_4(sc->mem, BGMAC_REG_CMD_CFG));
 
 	sc->mdio = device_add_child(dev, "mdio", -1);
 	bus_generic_attach(dev);
 
 	return 0;
+}
+
+static void
+bgmac_set_macaddr(struct bgmac_softc * sc)
+{
+
+	/*
+	 * Write MAC address
+	 */
+	bus_write_4(sc->mem, 0x80c, *((uint32_t*)sc->addr));
+	bus_write_4(sc->mem, 0x810, *(((uint16_t*)sc->addr)+2));
 }
 
 /*
@@ -228,6 +230,8 @@ bgmac_setup_interface(device_t dev)
 		    error);
 		return (ENXIO);
 	}
+
+	bgmac_set_macaddr(sc);
 
 #if 0
 	error = mii_attach(dev, &sc->miibus, ifp, bgmac_change, bgmac_stat,
@@ -483,11 +487,16 @@ bgmac_intr(void *arg)
 	/* enable interrupt */
 	bus_write_4(sc->mem, BGMAC_REG_INTERRUPT_MASK, BGMAC_REG_INTR_STATUS_RX
 	   | BGMAC_REG_INTR_STATUS_ERR);
-	bus_read_4(sc->mem, BGMAC_REG_INTERRUPT_MASK);
+	intr_status = bus_read_4(sc->mem, BGMAC_REG_INTERRUPT_MASK);
+	device_printf(sc->dev, "bgmac_intr: enable intr 0x%x\n", intr_status);
 
 	return;
 }
 
+/**
+ * Get configuration from NVRAM
+ *
+ */
 static int
 bgmac_get_config(struct bgmac_softc *sc)
 {

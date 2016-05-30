@@ -20,6 +20,8 @@ __FBSDID("$FreeBSD$");
 
 #include <machine/bus.h>
 
+#include <dev/bhnd/bhnd_debug.h>
+
 #include "bcm_dma_reg.h"
 #include "bcm_dma_desc.h"
 #include "bcm_dma_ops.h"
@@ -27,6 +29,7 @@ __FBSDID("$FreeBSD$");
 
 static void	bcm_dma_rxeof(struct bcm_dma *dma, struct bcm_dma_ring *dr,
 		    int *slot);
+static uint8_t	bcm_dma_check_redzone(struct bcm_dma_ring *dr, struct mbuf *m);
 static void	bcm_dma_set_redzone(struct bcm_dma_ring *dr, struct mbuf *m);
 
 void
@@ -37,12 +40,16 @@ bcm_dma_rx(struct bcm_dma_ring *dr)
 	/* Check if ring is RX */
 	KASSERT(!dr->dr_is_tx, ("%s:%d: fail", __func__, __LINE__));
 	curslot = dr->get_curslot(dr);
+	BHND_DEBUG("hw rx slot: %d", curslot);
 	KASSERT(curslot >= 0 && curslot < dr->dr_numslots,
 	    ("%s:%d: fail", __func__, __LINE__));
 
 	slot = dr->dr_curslot;
-	for (; slot != curslot; slot = bcm_dmaring_get_nextslot(dr, slot))
+	BHND_DEBUG("sw rx slot: %d", slot);
+	for (; slot != curslot; slot = bcm_dmaring_get_nextslot(dr, slot)) {
+		BHND_DEBUG("processing slot: %d", slot);
 		bcm_dma_rxeof(dr->dma, dr, &slot);
+	}
 
 	bus_dmamap_sync(dr->dr_ring_dtag, dr->dr_ring_dmap,
 	    BUS_DMASYNC_PREWRITE);
@@ -50,6 +57,123 @@ bcm_dma_rx(struct bcm_dma_ring *dr)
 	dr->set_curslot(dr, slot);
 	dr->dr_curslot = slot;
 }
+
+static void
+bcm_dma_rxeof(struct bcm_dma *dma, struct bcm_dma_ring *dr, int *slot)
+{
+	struct bcm_dmadesc_generic 	*desc;
+	struct bcm_dmadesc_meta 	*meta;
+	struct bcm_rx_header		*rxhdr;
+	struct mbuf 			*m;
+	device_t			 dev;
+	//uint32_t 			 macstat;
+	int32_t 			 tmp;
+	int 				 cnt = 0;
+	uint16_t 			 len;
+
+	dev = rman_get_device(dr->res);
+	BHND_DEBUG_DEV(dev, "RECEIVED FRAME");
+
+	dr->getdesc(dr, *slot, &desc, &meta);
+
+	bus_dmamap_sync(dma->rxbuf_dtag, meta->mt_dmap, BUS_DMASYNC_POSTREAD);
+	m = meta->mt_m;
+
+	BHND_DEBUG_DEV(dev, "received mbuf: %p", m);
+
+	/*
+	 * Create new buffer and put it into ring instead of dirty
+	 */
+	if (bcm_dma_rx_newbuf(dr, desc, meta, 0)) {
+		/*
+		 * TODO: add counters
+		 */
+		//counter_u64_add(sc->sc_ic.ic_ierrors, 1);
+		device_printf(dev, "error on bcm_dma_rx_newbuf\n");
+		return;
+	}
+
+	/*
+	 * Process dirty received buffer
+	 */
+	rxhdr = mtod(m, struct bcm_rx_header *);
+	len = le16toh(rxhdr->len);
+	device_printf(dev, "len: %d\n", len);
+#define HEXDUMP(_buf, _len) do { \
+  { \
+        size_t __tmp; \
+        const char *__buf = (const char *)_buf; \
+        for (__tmp = 0; __tmp < _len; __tmp++) \
+                printf("%02hhx ", *__buf++); \
+    printf("\n"); \
+  } \
+} while(0)
+
+	HEXDUMP(rxhdr,0x80);
+#undef HEXDUMP
+	if (len <= 0) {
+		/*
+		 * TODO: add counters
+		 */
+		//counter_u64_add(sc->sc_ic.ic_ierrors, 1);
+		device_printf(dev, "len < 0\n");
+		return;
+	}
+	if (bcm_dma_check_redzone(dr, m)) {
+		device_printf(dev, "redzone error.\n");
+		bcm_dma_set_redzone(dr, m);
+		bus_dmamap_sync(dma->rxbuf_dtag, meta->mt_dmap,
+		    BUS_DMASYNC_PREWRITE);
+		return;
+	}
+	if (len > dr->dr_rx_bufsize) {
+		tmp = len;
+		while (1) {
+			dr->getdesc(dr, *slot, &desc, &meta);
+			bcm_dma_set_redzone(dr, meta->mt_m);
+			bus_dmamap_sync(dma->rxbuf_dtag, meta->mt_dmap,
+			    BUS_DMASYNC_PREWRITE);
+			*slot = bcm_dmaring_get_nextslot(dr, *slot);
+			cnt++;
+			tmp -= dr->dr_rx_bufsize;
+			if (tmp <= 0)
+				break;
+		}
+		device_printf(dev, "too small buffer (len %u buf %u drop %d)\n",
+		       len, dr->dr_rx_bufsize, cnt);
+		return;
+	}
+
+	/*
+	 * TODO: 802.11 code, uncomment it
+	 */
+//	switch (mac->mac_fw.fw_hdr_format) {
+//	case BCM_FW_HDR_351:
+//	case BCM_FW_HDR_410:
+//		macstat = le32toh(rxhdr->ps4.r351.mac_status);
+//		break;
+//	case BCM_FW_HDR_598:
+//		macstat = le32toh(rxhdr->ps4.r598.mac_status);
+//		break;
+//	}
+
+//	if (macstat & BCM_RX_MAC_FCSERR) {
+//		if (!(mac->mac_sc->sc_filters & BCM_MACCTL_PASS_BADFCS)) {
+//			device_printf(sc->sc_dev, "RX drop\n");
+//			return;
+//		}
+//	}
+
+	m->m_len = m->m_pkthdr.len = len + dr->dr_frameoffset;
+	m_adj(m, dr->dr_frameoffset);
+
+	BHND_DEBUG_DEV(dev, "success; calling MAC rxeof");
+	/*
+	 * TODO: Callback to MAC level rxeof
+	 */
+	//bcm_rxeof(dr->dr_mac, m, rxhdr);
+}
+
 
 int
 bcm_dma_rx_newbuf(struct bcm_dma_ring *dr, struct bcm_dmadesc_generic *desc,
@@ -66,12 +190,12 @@ bcm_dma_rx_newbuf(struct bcm_dma_ring *dr, struct bcm_dmadesc_generic *desc,
 	bus_addr_t		 paddr;
 	int			 error;
 
-	printf("dr: %p\n", dr);
 	KASSERT(dr != NULL, ("ring is not specified"));
 	dma = dr->dma;
 	/*
 	 * Get new mbuf
 	 */
+	BHND_DEBUG("allocate new mbuf cluster");
 	m = m_getcl(M_NOWAIT, MT_DATA, M_PKTHDR);
 	if (m == NULL) {
 		error = ENOBUFS;
@@ -93,7 +217,11 @@ bcm_dma_rx_newbuf(struct bcm_dma_ring *dr, struct bcm_dmadesc_generic *desc,
 	/*
 	 * Try to load RX buf into temporary DMA map
 	 */
-	printf("load_mbuf[%p]: %p - %p - %p\n", dma, dma->rxbuf_dtag, dr->dr_spare_dmap, m);
+	BHND_DEBUG("load new mbuf[%p]: %p - %p - %p\n",
+			dma,
+			dma->rxbuf_dtag,
+			dr->dr_spare_dmap,
+			m);
 
 	KASSERT(dma->rxbuf_dtag != NULL, ("rxbuf_dtag isn't initialized"));
 	error = bus_dmamap_load_mbuf(dma->rxbuf_dtag, dr->dr_spare_dmap, m,
@@ -226,110 +354,4 @@ bcm_dma_rx_reset(struct bcm_dma_ring* ring, uint16_t base, int type)
 //}
 //
 
-static void
-bcm_dma_rxeof(struct bcm_dma *dma, struct bcm_dma_ring *dr, int *slot)
-{
-	struct bcm_dmadesc_generic 	*desc;
-	struct bcm_dmadesc_meta 	*meta;
-	struct bcm_rx_header		*rxhdr;
-	struct mbuf 			*m;
-	device_t			 dev;
-	//uint32_t 			 macstat;
-	int32_t 			 tmp;
-	int 				 cnt = 0;
-	uint16_t 			 len;
-
-	dev = rman_get_device(dr->res);
-	device_printf(dev, "RECEIVED FRAME\n");
-
-	dr->getdesc(dr, *slot, &desc, &meta);
-
-	bus_dmamap_sync(dma->rxbuf_dtag, meta->mt_dmap, BUS_DMASYNC_POSTREAD);
-	m = meta->mt_m;
-
-	if (bcm_dma_rx_newbuf(dr, desc, meta, 0)) {
-		/*
-		 * TODO: add counters
-		 */
-		//counter_u64_add(sc->sc_ic.ic_ierrors, 1);
-		device_printf(dev, "error on bcm_dma_rx_newbuf\n");
-		return;
-	}
-
-	rxhdr = mtod(m, struct bcm_rx_header *);
-	len = le16toh(rxhdr->len);
-	device_printf(dev, "len: %d\n", len);
-#define HEXDUMP(_buf, _len) do { \
-  { \
-        size_t __tmp; \
-        const char *__buf = (const char *)_buf; \
-        for (__tmp = 0; __tmp < _len; __tmp++) \
-                printf("%02hhx ", *__buf++); \
-    printf("\n"); \
-  } \
-} while(0)
-
-	HEXDUMP(rxhdr,0x10);
-#undef HEXDUMP
-	if (len <= 0) {
-		/*
-		 * TODO: add counters
-		 */
-		//counter_u64_add(sc->sc_ic.ic_ierrors, 1);
-		device_printf(dev, "len < 0\n");
-		return;
-	}
-	if (bcm_dma_check_redzone(dr, m)) {
-		device_printf(dev, "redzone error.\n");
-		bcm_dma_set_redzone(dr, m);
-		bus_dmamap_sync(dma->rxbuf_dtag, meta->mt_dmap,
-		    BUS_DMASYNC_PREWRITE);
-		return;
-	}
-	if (len > dr->dr_rx_bufsize) {
-		tmp = len;
-		while (1) {
-			dr->getdesc(dr, *slot, &desc, &meta);
-			bcm_dma_set_redzone(dr, meta->mt_m);
-			bus_dmamap_sync(dma->rxbuf_dtag, meta->mt_dmap,
-			    BUS_DMASYNC_PREWRITE);
-			*slot = bcm_dmaring_get_nextslot(dr, *slot);
-			cnt++;
-			tmp -= dr->dr_rx_bufsize;
-			if (tmp <= 0)
-				break;
-		}
-		device_printf(dev, "too small buffer (len %u buf %u drop %d)\n",
-		       len, dr->dr_rx_bufsize, cnt);
-		return;
-	}
-
-	/*
-	 * TODO: 802.11 code, uncomment it
-	 */
-//	switch (mac->mac_fw.fw_hdr_format) {
-//	case BCM_FW_HDR_351:
-//	case BCM_FW_HDR_410:
-//		macstat = le32toh(rxhdr->ps4.r351.mac_status);
-//		break;
-//	case BCM_FW_HDR_598:
-//		macstat = le32toh(rxhdr->ps4.r598.mac_status);
-//		break;
-//	}
-
-//	if (macstat & BCM_RX_MAC_FCSERR) {
-//		if (!(mac->mac_sc->sc_filters & BCM_MACCTL_PASS_BADFCS)) {
-//			device_printf(sc->sc_dev, "RX drop\n");
-//			return;
-//		}
-//	}
-
-	m->m_len = m->m_pkthdr.len = len + dr->dr_frameoffset;
-	m_adj(m, dr->dr_frameoffset);
-
-	/*
-	 * TODO: Callback to MAC level rxeof
-	 */
-	//bcm_rxeof(dr->dr_mac, m, rxhdr);
-}
 
