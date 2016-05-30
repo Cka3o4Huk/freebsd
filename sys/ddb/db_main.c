@@ -200,7 +200,7 @@ db_fetch_ksymtab(vm_offset_t ksym_start, vm_offset_t ksym_end)
 static int
 db_init(void)
 {
-
+	printf("db_init\n");
 	db_command_init();
 
 	if (ksymtab != 0 && kstrtab != 0 && ksymtab_size != 0) {
@@ -208,6 +208,7 @@ db_init(void)
 		    (char *)(ksymtab + ksymtab_size), "elf", (char *)kstrtab);
 	}
 	db_add_symbol_table(NULL, NULL, "kld", NULL);
+	printf("db_init: finish\n");
 	return (1);	/* We're the default debugger. */
 }
 
