@@ -33,6 +33,7 @@ __FBSDID("$FreeBSD$");
 
 /* found on https://wireless.wiki.kernel.org/en/users/drivers/b43/soc */
 struct bcm_socinfo bcm_socinfos[] = {
+		{0x00094704, 264, 25000000}, /* BCM4704, WL-500W */
 		{0x00005300, 600, 25000000}, /* BCM4706 to check */
 		{0x0022B83A, 300, 20000000}, /* BCM4716B0 ASUS RT-N12  */
 		{0x00914716, 354, 20000000}, /* BCM4717A1 to check  */
