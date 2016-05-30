@@ -78,8 +78,8 @@ __FBSDID("$FreeBSD$");
 #include <dev/cfe/cfe_api.h>
 #endif
 
-#if 0
-#define BROADCOM_TRACE 0
+#if 1
+#define BROADCOM_TRACE 1
 #endif
 
 extern int *edata;
@@ -110,7 +110,8 @@ mips_init(void)
 		result = cfe_enummem(i / 2, 0, &addr, &len, &type);
 		if (result < 0) {
 #ifdef BROADCOM_TRACE
-			printf("There is no phys memory for: %d\n", i);
+			printf("There is no phys memory for %d: err = %d\n", i,
+			    result);
 #endif
 			phys_avail[i] = phys_avail[i + 1] = 0;
 			break;
@@ -171,10 +172,15 @@ mips_init(void)
 	init_param1();
 	init_param2(physmem);
 	mips_cpu_init();
+	printf("T1: 0x%x\n", mips_rd_status());
 	pmap_bootstrap();
+	printf("T2\n");
 	mips_proc0_init();
+	printf("T3\n");
 	mutex_init();
+	printf("T4\n");
 	kdb_init();
+	printf("T5\n");
 #ifdef KDB
 	if (boothowto & RB_KDB)
 		kdb_enter(KDB_WHY_BOOTFLAGS, "Boot flags requested debugger");
@@ -182,7 +188,6 @@ mips_init(void)
 }
 
 #define	BCM_REG_CHIPC				0x18000000
-
 
 void
 platform_reset(void)
@@ -229,6 +234,20 @@ platform_start(__register_t a0, __register_t a1, __register_t a2,
 		cfe_init(a0, a2);
 #endif
 	cninit();
+
+//	int result;
+//	uint64_t addr, len, type;
+//
+//	printf("CFE: a0=%x a2=%x a3=%x\n", a0, a2, a3);
+//
+//	for (int i = 0; i < 10; i++) {
+//		for (int j = 0; j < 2; j++) {
+//			result = cfe_enummem(i, j, &addr, &len, &type);
+//			printf(">>> %d/%d: err=%d addr=%jx len=%jx type=%jx\n",
+//			    i, j, result, addr, len ,type);
+//			phys_avail[i] = phys_avail[i + 1] = 0;
+//		}
+//	}
 
 	mips_init();
 
