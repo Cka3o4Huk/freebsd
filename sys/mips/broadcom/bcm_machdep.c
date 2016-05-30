@@ -140,6 +140,22 @@ mips_init(void)
 		physmem += len;
 	}
 
+
+
+	if (physmem == 0) {
+		/* Don't give up */
+		char 	memsz[16];
+		int	result;
+
+		bzero(memsz, 16);
+		result = cfe_getenv("CFE_MEMORYSIZE", memsz, 16);
+		printf("CFE_MEMORYSIZE: %d %s\n", result, memsz);
+		if (result == 0) {
+			physmem = strtoul(memsz, NULL, 10);
+			phys_avail[i++] = 0;
+			phys_avail[i++] = physmem;
+		}
+	}
 #ifdef BROADCOM_TRACE
 	printf("Total phys memory is : %ld\n", physmem);
 #endif
