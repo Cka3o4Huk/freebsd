@@ -129,6 +129,7 @@ b53switch_attach(device_t dev)
 	struct b53switch_softc	*sc;
 	int			 i, err;
 	char 			 name[IFNAMSIZ];
+	uint32_t		 switchid;
 
 	sc = device_get_softc(dev);
 	sc->sc_dev = dev;
@@ -148,8 +149,9 @@ b53switch_attach(device_t dev)
 	strcpy(sc->info.es_name, "Broadcom 53xx switch");
 	sc->info.es_nvlangroups = 16;
 	sc->info.es_vlan_caps = 0;
+	sc->info.es_vlan_caps = ETHERSWITCH_VLAN_DOT1Q | ETHERSWITCH_VLAN_PORT;
 
-	for (i = 0; i < B53SWITCH_NUM_PHYS; i++) {
+	for (i = 0; i < B53SWITCH_NUM_PHYS - 1; i++) {
 		sc->ifp[i] = if_alloc(IFT_ETHER);
 		sc->ifp[i]->if_softc = sc;
 		sc->ifp[i]->if_flags |= IFF_UP | IFF_BROADCAST | IFF_DRV_RUNNING
@@ -170,29 +172,19 @@ b53switch_attach(device_t dev)
 	if (b53switch_reset(dev))
 		device_printf(dev, "reset failed\n");
 
-#define DUMP(_reg) device_printf(dev, #_reg "=%08x\n", b53switch_read4(sc, _reg))
-	DUMP(PORT_CTL(PORT0));
-	DUMP(PORT_CTL(PORT1));
-	DUMP(PORT_CTL(PORT2));
-	DUMP(PORT_CTL(PORT3));
-	DUMP(PORT_CTL(PORT4));
-	DUMP(PORT_CTL(PORT5));
-	DUMP(PORT_CTL(PORT6));
-	DUMP(PORT_CTL(PORT7));
-	DUMP(PORT_CTL(PORTMII));
-	DUMP(PORTMII_STATUS_OVERRIDE);
-	DUMP(SWITCH_DEVICEID);
-	DUMP(SWITCH_MODE);
-	DUMP(POWER_DOWN_MODE);
-	DUMP(LINK_STATUS_SUMMARY);
-	DUMP(BIST_STATUS_RC);
-	DUMP(VLAN_GLOBAL_CTL0);
-	DUMP(VLAN_GLOBAL_CTL1);
-	DUMP(VLAN_GLOBAL_CTL2);
-	DUMP(VLAN_DROP_UNTAGGED);
-	DUMP(VLAN_GLOBAL_CTL4);
-	DUMP(VLAN_GLOBAL_CTL5);
-#undef DUMP
+	switchid = b53switch_read4(sc, SWITCH_DEVICEID);
+
+	if(switchid == 0)
+		/* assume integrated BCM5325 */
+		switchid = 0x5325;
+
+	device_printf(dev, "found switch BCM%x\n", switchid);
+
+	b53switch_write4(sc, PORT_CTL(PORTMII), PORTMII_CTL_BCAST_ENABLED |
+			PORTMII_CTL_MCAST_ENABLED | PORTMII_CTL_UCAST_ENABLED);
+
+	if (bootverbose)
+		B53DUMP();
 
 	bus_generic_probe(dev);
 	bus_generic_attach(dev);
@@ -205,7 +197,7 @@ b53switch_attach(device_t dev)
 	//ARSWITCH_UNLOCK(sc);
 
 
-	for(int i = 0; i< 10; i++) {
+	for(int i = 1; i < 4; i++) {
 		struct etherswitch_vlangroup vg;
 
 		vg.es_vlangroup = i;
@@ -214,7 +206,6 @@ b53switch_attach(device_t dev)
 				vg.es_member_ports,
 				vg.es_untagged_ports);
 	}
-
 
 	return (0);
 }
@@ -233,7 +224,7 @@ b53switch_miipollstat(struct b53switch_softc *sc)
 {
 	struct mii_data		*mii;
 
-	for(int i = 0; i < B53SWITCH_NUM_PHYS; i++) {
+	for(int i = 0; i < B53SWITCH_NUM_PHYS - 1; i++) {
 		mii = device_get_softc(sc->miibus[i]);
 		mii_pollstat(mii);
 	}
@@ -449,21 +440,18 @@ b53switch_getport(device_t dev, etherswitch_port_t *p)
 
 	p->es_pvid &= 0xfff; /* TODO: define macro for mask */
 
-	/* TODO: add CPU port support (can't find it on 5358U */
-	mii = device_get_softc(sc->miibus[p->es_port]);
-	err = ifmedia_ioctl(mii->mii_ifp, &p->es_ifr, &mii->mii_media,
-		  SIOCGIFMEDIA);
-//	if (e6000sw_cpuport(sc, p->es_port)) {
-//		p->es_flags |= ETHERSWITCH_PORT_CPU;
-//		ifmr = &p->es_ifmr;
-//		ifmr->ifm_status = IFM_ACTIVE | IFM_AVALID;
-//		ifmr->ifm_count = 0;
-//		ifmr->ifm_current = ifmr->ifm_active =
-//		    IFM_ETHER | IFM_100_T | IFM_FDX;
-//		ifmr->ifm_mask = 0;
-//	} else {
-//	}
-
+	if(p->es_port != B53SWITCH_NUM_PHYS - 1) {
+		mii = device_get_softc(sc->miibus[p->es_port]);
+		err = ifmedia_ioctl(mii->mii_ifp, &p->es_ifr, &mii->mii_media,
+			  SIOCGIFMEDIA);
+	} else {
+		p->es_flags |= ETHERSWITCH_PORT_CPU;
+		p->es_ifmr.ifm_status = IFM_ACTIVE | IFM_AVALID;
+		p->es_ifmr.ifm_count = 0;
+		p->es_ifmr.ifm_active = IFM_ETHER | IFM_100_TX | IFM_FDX;
+		p->es_ifmr.ifm_current = IFM_ETHER | IFM_100_TX | IFM_FDX;
+		p->es_ifmr.ifm_mask = 0;
+	}
 out:
 //	B53SWITCH_UNLOCK(sc);
 	return (err);
@@ -1284,26 +1272,63 @@ b53switch_getvgroup(device_t dev, etherswitch_vlangroup_t *vg)
 	    (vid & VLAN_TABLE_ACCESS_VID_MASK);
 	error = b53switch_write4(sc, VLAN_TABLE_ACCESS, reg);
 	if (error) {
-		device_printf(dev, "can't write to VLAN_TABLE_ACCESS reg: %d",
+		device_printf(dev, "can't write to VLAN_TABLE_ACCESS reg: %d\n",
 		    error);
 		return (error);
 	}
 
 	error = b53switch_op(sc, VLAN_READ, &reg, 0);
 	if (error) {
-		device_printf(dev, "can't read from VLAN_READ reg: %d",
+		device_printf(dev, "can't read from VLAN_READ reg: %d\n",
 		    error);
 		return (error);
 	}
 
-	if (!(reg & VLAN_RW_VALID)) {
-		device_printf(dev, "not a valid VLAN id: %d",
-		    vid);
+	if (!(reg & VLAN_RW_VALID_5358)) {
+		device_printf(dev, "not a valid VLAN id [%d] = 0x%x\n",
+		    vid, reg);
 		return (ENOENT);
 	}
 
+//	error = b53switch_write4(sc, VLAN_TABLE_INDX_5395, vid);
+//	if (error) {
+//		device_printf(dev, "can't write to VLAN_TABLE_INDX_5395 reg: %d\n",  error);
+//		return (error);
+//	}
+//	error = b53switch_write4(sc, VLAN_TABLE_ACCESS_5395,
+//	    VLAN_TABLE_ACCESS_5395_RUN |VLAN_TABLE_ACCESS_5395_READ);
+//	if (error){
+//		device_printf(dev, "can't write to VLAN_TABLE_ACCESS_5395 reg: %d\n",  error);
+//		return (error);
+//	}
+//
+//	error = b53switch_op(sc, VLAN_TABLE_ENTRY_5395, &reg, 0);
+//	if (error){
+//		device_printf(dev, "can't read to VLAN_TABLE_ENTRY_5395 reg: %d\n",  error);
+//		return (error);
+//	}
 
-	vg->es_vid = vg->es_vlangroup; /* XXX: ??? */
+//	error = b53switch_write4(sc, VLAN_TABLE_INDX_5350, vid);
+//	if (error) {
+//		device_printf(dev, "can't write to VLAN_TABLE_INDX_5395 reg: %d\n",  error);
+//		return (error);
+//	}
+//	error = b53switch_write4(sc, VLAN_TABLE_ACCESS_5350,
+//	    VLAN_TABLE_ACCESS_5395_RUN |VLAN_TABLE_ACCESS_5395_READ);
+//	if (error){
+//		device_printf(dev, "can't write to VLAN_TABLE_ACCESS_5395 reg: %d\n",  error);
+//		return (error);
+//	}
+//
+//	error = b53switch_op(sc, VLAN_TABLE_ENTRY_5350, &reg, 0);
+//	if (error){
+//		device_printf(dev, "can't read to VLAN_TABLE_ENTRY_5395 reg: %d\n",  error);
+//		return (error);
+//	}
+//
+//	device_printf(dev, "REG = 0x%x\n", reg);
+
+	vg->es_vid = ETHERSWITCH_VID_VALID | vg->es_vlangroup; /* XXX: ??? */
 	vg->es_member_ports = B53_UNSHIFT(reg, VLAN_RW_MEMBER);
 	vg->es_untagged_ports = B53_UNSHIFT(reg, VLAN_RW_UNTAGGED);
 	/* TODO: forwarding */

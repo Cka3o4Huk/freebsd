@@ -12,7 +12,7 @@
 
 #include <dev/mii/mii.h>
 
-#define	B53SWITCH_NUM_PHYS	5
+#define	B53SWITCH_NUM_PHYS	6
 
 MALLOC_DECLARE(M_BCMSWITCH);
 MALLOC_DEFINE(M_BCMSWITCH, "bcmswitch", "bcmswitch data structures");

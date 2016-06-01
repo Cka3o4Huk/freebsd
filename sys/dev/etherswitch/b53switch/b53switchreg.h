@@ -429,6 +429,8 @@ Page PRT, Address 34h-35h 	DPM Interrupt Register
 #define		VLAN_RW_VALID_5350		0x00100000
 #define		VLAN_RW_VALID_5380 		0x04000000
 #define		VLAN_RW_VALID 			0x00100000
+/* XXX: need more testing / boards */
+#define		VLAN_RW_VALID_5358		0x01000000
 #define		VLAN_RW_UNTAG_SHIFT_5395	9
 #define		VLAN_RW_UNTAG_SHIFT_5380	13
 #define		VLAN_RW_UNTAG_SHIFT_5350	6
