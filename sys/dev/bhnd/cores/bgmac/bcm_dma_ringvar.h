@@ -5,8 +5,8 @@
  *      Author: mizhka
  */
 
-#ifndef SYS_DEV_BHND_CORES_BGMAC_BCM_DMA_RING_H_
-#define SYS_DEV_BHND_CORES_BGMAC_BCM_DMA_RING_H_
+#ifndef SYS_DEV_BHND_CORES_BGMAC_BCM_DMA_RINGVAR_H_
+#define SYS_DEV_BHND_CORES_BGMAC_BCM_DMA_RINGVAR_H_
 
 #include "bcm_dma_desc.h"
 #include "bcm_dma.h"
@@ -61,18 +61,18 @@ struct bcm_dma_ring {
 /*
  * Used in bcm_dma.c
  */
-struct bcm_dma_ring*	bcm_dma_ringsetup(struct bcm_dma *dma,
+struct bcm_dma_ring*	bcm_dma_ring_setup(struct bcm_dma *dma,
 			    struct resource *res,
 			    int ctl_index,
 			    int for_tx,
 			    int type);
 void			bcm_dma_ringload(struct bcm_dma_ring *dr);
 void			bcm_dma_ringstop(struct bcm_dma_ring *dr);
-void			bcm_dma_ringfree(struct bcm_dma_ring **dr);
-int			bcm_dma_ringalloc(struct bcm_dma *dma,
+void			bcm_dma_ring_free(struct bcm_dma_ring **dr);
+int			bcm_dma_ring_alloc(struct bcm_dma *dma,
 			    struct bcm_dma_ring *dr);
 int			bcm_dmaring_get_freeslot(struct bcm_dma_ring *dr);
 int			bcm_dmaring_get_nextslot(struct bcm_dma_ring *dr,
 			    int slot);
 
-#endif /* SYS_DEV_BHND_CORES_BGMAC_BCM_DMA_RING_H_ */
+#endif /* SYS_DEV_BHND_CORES_BGMAC_BCM_DMA_RINGVAR_H_ */

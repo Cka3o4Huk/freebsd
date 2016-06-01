@@ -52,4 +52,9 @@ struct bcm_dmadesc_generic {
 	} __packed dma;
 } __packed;
 
+#define	BCM_DMADESC_DUMP(_desc)							\
+	BHND_DEBUG("\tctl0=0x%x\n\tctl1=0x%x\n\taddrlow=0x%x\n\taddrhi=0x%x\n", \
+	    (_desc)->dma.dma64.control0, (_desc)->dma.dma64.control1,		\
+	    (_desc)->dma.dma64.address_low, (_desc)->dma.dma64.address_high);
+
 #endif /* SYS_DEV_BHND_CORES_BGMAC_BCM_DMA_DESC_H_ */

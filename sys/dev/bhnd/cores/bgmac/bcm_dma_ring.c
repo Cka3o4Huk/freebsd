@@ -20,22 +20,24 @@ __FBSDID("$FreeBSD$");
 
 #include <machine/bus.h>
 
+#define	BHND_LOGGING	BHND_INFO_LEVEL
+#include <dev/bhnd/bhnd_debug.h>
+
 #include "bcm_dma_reg.h"
 #include "bcm_dma_desc.h"
 #include "bcm_dma_ops.h"
-#include "bcm_dma_ring.h"
+#include "bcm_dma_ringvar.h"
 
 /*
  * Internal
  */
 
-static void	bcm_dma_ringfreedescbufs(struct bcm_dma_ring *dr);
-static void	bcm_dma_ringfreememory(struct bcm_dma_ring *dr);
-static void	bcm_dmaring_free_descbuf(struct bcm_dmadesc_meta *meta);
-
+static void	bcm_dma_ring_free_memory(struct bcm_dma_ring *dr);
+static void	bcm_dma_ring_free_descbufs(struct bcm_dma_ring *dr);
+static void	bcm_dma_ring_free_descbuf(struct bcm_dmadesc_meta *meta);
 
 struct bcm_dma_ring *
-bcm_dma_ringsetup(struct bcm_dma *dma, struct resource *res, int ctl_id,
+bcm_dma_ring_setup(struct bcm_dma *dma, struct resource *res, int ctl_id,
 		int is_tx, int type)
 {
 	struct bcm_dma_ring		*dr;
@@ -43,10 +45,9 @@ bcm_dma_ringsetup(struct bcm_dma *dma, struct resource *res, int ctl_id,
 	struct bcm_dmadesc_meta		*mt;
 	int				 error, i;
 
-	/*
-	 * TODO: replace by bhnd_debug
-	 */
-	printf("bcm_dma_ringsetup\n");
+	BHND_DEBUG_DEV(rman_get_device(res), "setup of ring: %s[%d]",
+	    (is_tx) ? "TX" : "RX", ctl_id);
+
 	/*
 	 * Allocate memory for new ring
 	 */
@@ -92,11 +93,10 @@ bcm_dma_ringsetup(struct bcm_dma *dma, struct resource *res, int ctl_id,
 		dr->dr_curslot = -1;
 	} else {
 		KASSERT(dr->dr_index == 0, ("%s:%d: fail", __func__, __LINE__));
-		/*
-		 * TODO: correct fake constants
-		 */
+
+		/* TODO: correct fake dr_rx_bufsize */
 		dr->dr_rx_bufsize = 2342;
-		dr->dr_frameoffset = 30;
+		dr->dr_frameoffset = BCM_FRAME_OFFSET;
 //		switch (mac->mac_fw.fw_hdr_format) {
 //		case BCM_FW_HDR_351:
 //		case BCM_FW_HDR_410:
@@ -114,7 +114,7 @@ bcm_dma_ringsetup(struct bcm_dma *dma, struct resource *res, int ctl_id,
 //		}
 	}
 
-	error = bcm_dma_ringalloc(dma, dr);
+	error = bcm_dma_ring_alloc(dma, dr);
 	if (error)
 		goto fail1;
 
@@ -200,7 +200,6 @@ bcm_dma_ringsetup(struct bcm_dma *dma, struct resource *res, int ctl_id,
 		printf("dr->dr_numslots: %d\n",dr->dr_numslots);
 		for (i = 0; i < dr->dr_numslots; i++) {
 			dr->getdesc(dr, i, &desc, &mt);
-			printf("dr->dr_numslots[%d]\n", i);
 			error = bus_dmamap_create(dma->rxbuf_dtag, 0,
 			    &mt->mt_dmap);
 			if (error) {
@@ -239,7 +238,7 @@ fail0:
 }
 
 int
-bcm_dma_ringalloc(struct bcm_dma *dma, struct bcm_dma_ring *dr)
+bcm_dma_ring_alloc(struct bcm_dma *dma, struct bcm_dma_ring *dr)
 {
 	bus_dma_tag_t		*tagp;
 	bus_dmamap_t		*mapp;
@@ -247,15 +246,13 @@ bcm_dma_ringalloc(struct bcm_dma *dma, struct bcm_dma_ring *dr)
 	bus_addr_t		*paddrp;
 	int			 error;
 
+	BHND_DEBUG_DEV(rman_get_device(dr->res), "allocate & load DMA descriptor"
+	    " ring %s[%d]", (dr->dr_is_tx) ? "TX" : "RX", dr->dr_index);
+
 	tagp = &dr->dr_ring_dtag;
 	mapp = &dr->dr_ring_dmap;
 	vaddrp = &dr->dr_ring_descbase;
 	paddrp = &dr->dr_ring_dmabase;
-
-	/*
-	 * TODO: replace by bhnd_debug
-	 */
-	printf("bcm_dma_ringalloc\n");
 
 	/*
 	 * Create DMA tag for description ring
@@ -298,14 +295,14 @@ bcm_dma_ringalloc(struct bcm_dma *dma, struct bcm_dma_ring *dr)
 
 
 void
-bcm_dma_ringfree(struct bcm_dma_ring **dr)
+bcm_dma_ring_free(struct bcm_dma_ring **dr)
 {
 
 	if (dr == NULL)
 		return;
 
-	bcm_dma_ringfreedescbufs(*dr);
-	bcm_dma_ringfreememory(*dr);
+	bcm_dma_ring_free_descbufs(*dr);
+	bcm_dma_ring_free_memory(*dr);
 /*
  * TODO:
  */
@@ -321,7 +318,7 @@ bcm_dma_ringfree(struct bcm_dma_ring **dr)
 }
 
 static void
-bcm_dma_ringfreememory(struct bcm_dma_ring *dr)
+bcm_dma_ring_free_memory(struct bcm_dma_ring *dr)
 {
 
 	bus_dmamap_unload(dr->dr_ring_dtag, dr->dr_ring_dmap);
@@ -330,7 +327,7 @@ bcm_dma_ringfreememory(struct bcm_dma_ring *dr)
 }
 
 static void
-bcm_dma_ringfreedescbufs(struct bcm_dma_ring *dr)
+bcm_dma_ring_free_descbufs(struct bcm_dma_ring *dr)
 {
 	struct bcm_dmadesc_generic 	*desc;
 	struct bcm_dmadesc_meta 	*meta;
@@ -361,12 +358,12 @@ bcm_dma_ringfreedescbufs(struct bcm_dma_ring *dr)
 				    meta->mt_dmap);
 		} else
 			bus_dmamap_unload(dr->dma->rxbuf_dtag, meta->mt_dmap);
-		bcm_dmaring_free_descbuf(meta);
+		bcm_dma_ring_free_descbuf(meta);
 	}
 }
 
 static void
-bcm_dmaring_free_descbuf(struct bcm_dmadesc_meta *meta)
+bcm_dma_ring_free_descbuf(struct bcm_dmadesc_meta *meta)
 {
 
 	if (meta->mt_m != NULL) {
@@ -405,9 +402,13 @@ bcm_dma_ringload(struct bcm_dma_ring *dr)
 
 		addrext = ((ring64 >> 32) & BCM_DMA_ADDR_MASK) >> 30;
 
+		BCM_DMA_WRITE(dr, BCM_DMA_CTL, 0);
+		DELAY(30);
+
 		value = (dr->dr_is_tx) ? 0 :
 			    BCM_DMA_SHIFT(dr->dr_frameoffset, BCM_DMA_CTL_RXFROFF);
 		value |= BCM_DMA_CTL_ENABLE;
+		value |= 0x800; /* disable parity - TODO: move to define*/
 		value |= BCM_DMA_SHIFT(addrext, BCM_DMA_CTL_ADDREXT);
 		printf("ringload| 0x%x -> 0x%x\n", dr->dr_base + BCM_DMA_CTL,
 		    value);
@@ -417,13 +418,16 @@ bcm_dma_ringload(struct bcm_dma_ring *dr)
 		BCM_DMA_WRITE(dr, BCM_DMA64_RINGHI, ((ring64 >> 32) &
 		    ~BCM_DMA_ADDR_MASK) | (trans << 1));
 
-		if (dr->dr_is_tx)
+		if (!dr->dr_is_tx)
 			BCM_DMA_WRITE(dr, BCM_DMA64_INDEX, dr->dr_numslots *
 			    sizeof(struct bcm_dmadesc64));
 
 	} else {
 		ring32 = (uint32_t)(dr->dr_ring_dmabase);
 		addrext = (ring32 & BCM_DMA_ADDR_MASK) >> 30;
+
+		BCM_DMA_WRITE(dr, BCM_DMA_CTL, 0);
+		DELAY(30);
 
 		value = (dr->dr_is_tx) ? 0 :
 			    (dr->dr_frameoffset << BCM_DMA_CTL_RXFROFF_SHIFT);
@@ -433,7 +437,7 @@ bcm_dma_ringload(struct bcm_dma_ring *dr)
 
 		BCM_DMA_WRITE(dr, BCM_DMA32_RING,
 		    (ring32 & ~BCM_DMA_ADDR_MASK) | trans);
-		if (dr->dr_is_tx)
+		if (!dr->dr_is_tx)
 			BCM_DMA_WRITE(dr, BCM_DMA32_INDEX, dr->dr_numslots *
 			    sizeof(struct bcm_dmadesc32));
 	}

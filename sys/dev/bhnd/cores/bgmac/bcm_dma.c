@@ -98,7 +98,7 @@ __FBSDID("$FreeBSD$");
 #include <machine/bus.h>
 
 #include "bcm_dma.h"
-#include "bcm_dma_ring.h"
+#include "bcm_dma_ringvar.h"
 
 void		bcm_dma_init(struct bcm_dma *dma);
 void		bcm_dma_stop(struct bcm_dma *dma);
@@ -147,7 +147,7 @@ bcm_dma_attach(device_t dev, struct resource *res, struct bcm_dma *dma)
 	//fail4:	bcm_dma_ringfree(&dma->wme[WME_AC_BE]);
 	//fail3:	bcm_dma_ringfree(&dma->wme[WME_AC_BK]);
 
-	dma->rx = bcm_dma_ringsetup(dma, res, 0, 0, dma->dmatype);
+	dma->rx = bcm_dma_ring_setup(dma, res, 0, 0, dma->dmatype);
 	if (!dma->rx) {
 		bcm_dma_destroy_tags(dma);
 		return (ENXIO);
@@ -294,7 +294,7 @@ bcm_dma_free(struct bcm_dma *dma)
 //		return;
 //	dma = &mac->mac_method.dma;
 
-	bcm_dma_ringfree(&dma->rx);
+	bcm_dma_ring_free(&dma->rx);
 //	bcm_dma_ringfree(&dma->wme[WME_AC_BK]);
 //	bcm_dma_ringfree(&dma->wme[WME_AC_BE]);
 //	bcm_dma_ringfree(&dma->wme[WME_AC_VI]);

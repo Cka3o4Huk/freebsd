@@ -36,7 +36,7 @@ struct bcm_dma {
 	uint64_t			lastseq;	/* XXX FIXME */
 };
 
-#define BCM_FRAME_OFFSET		0x1e
+#define BCM_FRAME_OFFSET		0x04
 
 struct bcm_rx_header {
 	uint16_t len;
@@ -98,6 +98,7 @@ void		bcm_dmamap_callback(void *arg, bus_dma_segment_t *seg,
 void		bcm_dmamap_callback_mbuf(void *arg, bus_dma_segment_t *seg,
 		    int nseg, bus_size_t mapsz __unused, int error);
 
-
+void		bgmac_rxeof(struct device *dev, struct mbuf *m,
+		    struct bcm_rx_header *rxhdr);
 
 #endif /* SYS_DEV_BHND_CORES_BGMAC_BCM_DMA_H_ */

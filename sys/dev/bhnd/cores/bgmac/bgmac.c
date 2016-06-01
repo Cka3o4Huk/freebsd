@@ -34,6 +34,8 @@
  *
  */
 
+#define	BHND_LOGGING	BHND_INFO_LEVEL
+
 #include <sys/cdefs.h>
 #include <sys/types.h>
 #include <sys/param.h>
@@ -42,6 +44,8 @@
 #include <sys/bus.h>
 #include <sys/rman.h>
 #include <sys/socket.h>
+
+#include <sys/kdb.h>
 
 #include <net/if.h>
 #include <net/if_var.h>
@@ -76,6 +80,7 @@
 #include <dev/bhnd/bhnd.h>
 #include <dev/bhnd/bhnd_ids.h>
 
+#include "bgmac.h"
 #include "bgmacvar.h"
 #include "bgmacreg.h"
 
@@ -127,6 +132,8 @@ static int	bgmac_get_config(struct bgmac_softc *sc);
  * Internals
  */
 static int	bgmac_setup_interface(device_t dev);
+/* set configuration register, requires reset */
+static void	bgmac_set_cmdcfg(struct bgmac_softc * sc, uint32_t val);
 
 /*
  * DMA
@@ -178,23 +185,55 @@ bgmac_attach(device_t dev)
 	sc->mem = res[0];
 	sc->irq = res[1];
 
+	BGMACDUMP(sc);
+
 	error = bgmac_setup_interface(dev);
 
-
+	/* set number of interrupts per frame */
 	bus_write_4(sc->mem, BGMAC_REG_INTR_RECV_LAZY,
 			1 << BGMAC_REG_INTR_RECV_LAZY_FC_SHIFT);
 	bus_write_4(sc->mem, BGMAC_REG_INTERRUPT_MASK,
 			BGMAC_REG_INTR_STATUS_ERR | BGMAC_REG_INTR_STATUS_RX);
-	uint32_t tmp = bus_read_4(sc->mem, BGMAC_REG_CMD_CFG);
-	bus_write_4(sc->mem, BGMAC_REG_CMD_CFG,
-	    tmp | BGMAC_REG_CMD_CFG_RX | BGMAC_REG_CMD_CFG_PROM ); // BGMAC_REG_CMD_CFG_TX
 
-	device_printf(dev, "cmd_cfg: %x\n", bus_read_4(sc->mem, BGMAC_REG_CMD_CFG));
+	/* TODO: use BHND_DEBUG */
+	device_printf(dev, "before cmd_cfg: %x\n",
+	    bus_read_4(sc->mem, BGMAC_REG_CMD_CFG));
+
+	bgmac_set_cmdcfg(sc, BGMAC_REG_CMD_CFG_RX | BGMAC_REG_CMD_CFG_PROM);
+
+	device_printf(dev, "after cmd_cfg: %x\n",
+	    bus_read_4(sc->mem, BGMAC_REG_CMD_CFG));
+
+	device_printf(dev, "max len: %x\n",
+	    bus_read_4(sc->mem, BGMAC_REG_RX_MAX_LEN));
 
 	sc->mdio = device_add_child(dev, "mdio", -1);
 	bus_generic_attach(dev);
 
+	BGMACDUMP(sc);
+
 	return 0;
+}
+
+static void
+bgmac_set_cmdcfg(struct bgmac_softc * sc, uint32_t val)
+{
+	uint32_t	tmp;
+
+	tmp = bus_read_4(sc->mem, BGMAC_REG_CMD_CFG);
+	bus_write_4(sc->mem, BGMAC_REG_CMD_CFG, tmp | BGMAC_REG_CMD_CFG_RESET);
+	/* hope it's enough for reset */
+	DELAY(100);
+
+	tmp = bus_read_4(sc->mem, BGMAC_REG_CMD_CFG);
+	bus_write_4(sc->mem, BGMAC_REG_CMD_CFG, tmp | val);
+
+	DELAY(100);
+
+	tmp = bus_read_4(sc->mem, BGMAC_REG_CMD_CFG);
+	bus_write_4(sc->mem, BGMAC_REG_CMD_CFG, tmp & ~BGMAC_REG_CMD_CFG_RESET);
+
+	DELAY(100);
 }
 
 static void
@@ -279,68 +318,6 @@ bgmac_setup_interface(device_t dev)
 
 	return (0);
 }
-
-//static int
-//bgmac_dma_alloc(struct bgmac_softc *sc)
-//{
-//	int	err;
-//
-//	/*
-//	 * parent tag.  Apparently the chip cannot handle any DMA address
-//	 * greater than 1GB.
-//	 */
-//	err = bus_dma_tag_create(bus_get_dma_tag(sc->dev), /* parent */
-//	    1, 0,			/* alignment, boundary */
-//	    BUS_SPACE_MAXADDR, 		/* lowaddr */
-//	    BUS_SPACE_MAXADDR,		/* highaddr */
-//	    NULL, NULL,			/* filter, filterarg */
-//	    BUS_SPACE_MAXSIZE_32BIT,	/* maxsize */
-//	    0,				/* nsegments */
-//	    BUS_SPACE_MAXSIZE_32BIT,	/* maxsegsize */
-//	    0,				/* flags */
-//	    NULL, NULL,			/* lockfunc, lockarg */
-//	    &sc->parent_tag);
-//
-//	if (err) {
-//		BHND_ERROR_DEV(sc->dev, "can't create parent DMA tag: %d", err);
-//		return (err);
-//	}
-//
-//	err = bus_dma_tag_create(sc->parent_tag, /* parent */
-//	    0x1000, 0,			/* alignment, boundary */
-//	    BUS_SPACE_MAXADDR, 		/* lowaddr */
-//	    BUS_SPACE_MAXADDR,		/* highaddr */
-//	    NULL, NULL,			/* filter, filterarg */
-//	    0x1000,			/* maxsize */
-//	    1,				/* nsegments */
-//	    BUS_SPACE_MAXSIZE_32BIT,	/* maxsegsize */
-//	    0,				/* flags */
-//	    NULL, NULL,			/* lockfunc, lockarg */
-//	    &sc->ring_tag);
-//
-//	err = bus_dmamem_alloc(sc->ring_tag,
-//				&sc->buf, BUS_DMA_NOWAIT,
-//				   &sc->ring_map);
-//	KASSERT(err==0, ("panic"));
-//
-//	err = bus_dmamap_load(sc->ring_tag, sc->ring_map, &sc->rxdesc_ring,
-//			0x1000, bgmac_dma_ring_addr, &sc->rxdesc_ring_busaddr,
-//			BUS_DMA_NOWAIT);
-//
-//	KASSERT(err==0, ("panic"));
-//
-//	return (0);
-//}
-//
-//static void
-//bgmac_dma_ring_addr(void *arg, bus_dma_segment_t *seg, int nseg, int error)
-//{
-//	if (!error) {
-//		KASSERT(nseg == 1, ("too many segments(%d)\n", nseg));
-//		*((bus_addr_t *)arg) = seg->ds_addr;
-//	}
-//}
-
 
 /*
  * **************************** MII BUS Functions ****************************
@@ -473,7 +450,7 @@ bgmac_intr(void *arg)
 	 */
 
 	intr_status = bus_read_4(sc->mem, BGMAC_REG_INTR_STATUS);
-	device_printf(sc->dev, "bgmac_intr: 0x%x\n", intr_status);
+	BHND_TRACE_DEV(sc->dev, "bgmac_intr: 0x%x\n", intr_status);
 	bus_write_4(sc->mem, BGMAC_REG_INTR_STATUS, intr_status);
 
 	/* disable interrupt for a while */
@@ -481,14 +458,30 @@ bgmac_intr(void *arg)
 	bus_read_4(sc->mem, BGMAC_REG_INTERRUPT_MASK);
 
 	if (intr_status & BGMAC_REG_INTR_STATUS_RX) {
-		device_printf(sc->dev, "RX!\n");
+		BHND_TRACE_DEV(sc->dev, "RX!");
 		bcm_dma_rx(sc->dma->rx);
+		intr_status &= ~BGMAC_REG_INTR_STATUS_RX;
 	}
+
+	if (intr_status & BGMAC_REG_INTR_STATUS_ERR_OVER) {
+		BHND_ERROR_DEV(sc->dev, "Overflow!");
+		BGMACDUMP(sc);
+		bcm_dma_rx(sc->dma->rx);
+		intr_status &= ~BGMAC_REG_INTR_STATUS_ERR_OVER;
+	}
+
+	if (intr_status & BGMAC_REG_INTR_STATUS_ERR_DESC){
+		BHND_ERROR_DEV(sc->dev, "ERROR!");
+		BGMACDUMP(sc);
+		kdb_enter("bgmac_error", "unknown error: descriptor?");
+		intr_status &= ~BGMAC_REG_INTR_STATUS_ERR_OVER;
+	}
+
 	/* enable interrupt */
 	bus_write_4(sc->mem, BGMAC_REG_INTERRUPT_MASK, BGMAC_REG_INTR_STATUS_RX
 	   | BGMAC_REG_INTR_STATUS_ERR);
 	intr_status = bus_read_4(sc->mem, BGMAC_REG_INTERRUPT_MASK);
-	device_printf(sc->dev, "bgmac_intr: enable intr 0x%x\n", intr_status);
+	BHND_TRACE_DEV(sc->dev, "bgmac_intr: enable intr 0x%x\n", intr_status);
 
 	return;
 }
@@ -525,6 +518,19 @@ bgmac_get_config(struct bgmac_softc *sc)
 	}
 
 	return (0);
+}
+
+void
+bgmac_rxeof(struct device *dev, struct mbuf *m, struct bcm_rx_header *rxhdr)
+{
+	struct bgmac_softc	*sc;
+	struct ifnet		*ifp;
+
+	/* TODO: early draft - need more attention */
+	sc = device_get_softc(dev);
+	ifp = sc->ifp;
+	m->m_pkthdr.rcvif = ifp;
+	(*ifp->if_input)(ifp, m);
 }
 
 /**

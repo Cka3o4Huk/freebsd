@@ -20,12 +20,13 @@ __FBSDID("$FreeBSD$");
 
 #include <machine/bus.h>
 
-#include <dev/bhnd/bhnd_debug.h>
-
 #include "bcm_dma_reg.h"
 #include "bcm_dma_desc.h"
 #include "bcm_dma_ops.h"
-#include "bcm_dma_ring.h"
+#include "bcm_dma_ringvar.h"
+
+#define	BHND_LOGGING	BHND_INFO_LEVEL
+#include <dev/bhnd/bhnd_debug.h>
 
 static void	bcm_dma_rxeof(struct bcm_dma *dma, struct bcm_dma_ring *dr,
 		    int *slot);
@@ -79,7 +80,7 @@ bcm_dma_rxeof(struct bcm_dma *dma, struct bcm_dma_ring *dr, int *slot)
 	bus_dmamap_sync(dma->rxbuf_dtag, meta->mt_dmap, BUS_DMASYNC_POSTREAD);
 	m = meta->mt_m;
 
-	BHND_DEBUG_DEV(dev, "received mbuf: %p", m);
+	BHND_TRACE_DEV(dev, "received mbuf: %p", m);
 
 	/*
 	 * Create new buffer and put it into ring instead of dirty
@@ -98,7 +99,7 @@ bcm_dma_rxeof(struct bcm_dma *dma, struct bcm_dma_ring *dr, int *slot)
 	 */
 	rxhdr = mtod(m, struct bcm_rx_header *);
 	len = le16toh(rxhdr->len);
-	device_printf(dev, "len: %d\n", len);
+	BHND_TRACE_DEV(dev, "len: %d", len);
 #define HEXDUMP(_buf, _len) do { \
   { \
         size_t __tmp; \
@@ -109,7 +110,7 @@ bcm_dma_rxeof(struct bcm_dma *dma, struct bcm_dma_ring *dr, int *slot)
   } \
 } while(0)
 
-	HEXDUMP(rxhdr,0x80);
+	//HEXDUMP(rxhdr,0x80);
 #undef HEXDUMP
 	if (len <= 0) {
 		/*
@@ -167,11 +168,11 @@ bcm_dma_rxeof(struct bcm_dma *dma, struct bcm_dma_ring *dr, int *slot)
 	m->m_len = m->m_pkthdr.len = len + dr->dr_frameoffset;
 	m_adj(m, dr->dr_frameoffset);
 
-	BHND_DEBUG_DEV(dev, "success; calling MAC rxeof");
+	BHND_TRACE_DEV(dev, "success; calling MAC rxeof");
 	/*
-	 * TODO: Callback to MAC level rxeof
+	 * Callback to MAC level rxeof
 	 */
-	//bcm_rxeof(dr->dr_mac, m, rxhdr);
+	bgmac_rxeof(rman_get_device(dr->res), m, rxhdr);
 }
 
 
@@ -195,7 +196,8 @@ bcm_dma_rx_newbuf(struct bcm_dma_ring *dr, struct bcm_dmadesc_generic *desc,
 	/*
 	 * Get new mbuf
 	 */
-	BHND_DEBUG("allocate new mbuf cluster");
+	if (!init)
+		BHND_TRACE("allocate new mbuf cluster");
 	m = m_getcl(M_NOWAIT, MT_DATA, M_PKTHDR);
 	if (m == NULL) {
 		error = ENOBUFS;
@@ -217,11 +219,12 @@ bcm_dma_rx_newbuf(struct bcm_dma_ring *dr, struct bcm_dmadesc_generic *desc,
 	/*
 	 * Try to load RX buf into temporary DMA map
 	 */
-	BHND_DEBUG("load new mbuf[%p]: %p - %p - %p\n",
-			dma,
-			dma->rxbuf_dtag,
-			dr->dr_spare_dmap,
-			m);
+	if (0)
+		BHND_DEBUG("load new mbuf[%p]: %p - %p - %p\n",
+				dma,
+				dma->rxbuf_dtag,
+				dr->dr_spare_dmap,
+				m);
 
 	KASSERT(dma->rxbuf_dtag != NULL, ("rxbuf_dtag isn't initialized"));
 	error = bus_dmamap_load_mbuf(dma->rxbuf_dtag, dr->dr_spare_dmap, m,
@@ -263,8 +266,12 @@ back:
 	/*
 	 * Setup RX buf descriptor
 	 */
-	dr->setdesc(dr, desc, meta->mt_paddr, meta->mt_m->m_len -
-	    sizeof(*hdr), 0, 0, 0);
+	dr->setdesc(dr, desc, meta->mt_paddr,
+	    meta->mt_m->m_len - sizeof(struct bcm_rx_header), 0, 0, 0);
+#if 0
+	/*TODO: add debug configuration bits */
+	BCM_DMADESC_DUMP(desc);
+#endif
 	return (error);
 }
 
@@ -272,10 +279,11 @@ static void
 bcm_dma_set_redzone(struct bcm_dma_ring *dr, struct mbuf *m)
 {
 	struct bcm_rx_header	*rxhdr;
-	//unsigned char		*frame;
+	unsigned char		*frame;
 
 	rxhdr = mtod(m, struct bcm_rx_header *);
 	rxhdr->len = 0;
+	rxhdr->flags = 0;
 
 	/*
 	 * TODO: uncomment it
@@ -285,8 +293,9 @@ bcm_dma_set_redzone(struct bcm_dma_ring *dr, struct mbuf *m)
 //	    sizeof(struct bcm_plcp6) + 2,
 //	    ("%s:%d: fail", __func__, __LINE__));
 //
-//	frame = mtod(m, char *) + dr->dr_frameoffset;
-//	memset(frame, 0xff, sizeof(struct bcm_plcp6) + 2 /* padding */);
+	frame = mtod(m, char *) + dr->dr_frameoffset;
+	/* TODO: use M_CLBYTES macros here instead of 0x7d0 */
+	memset(frame, 0xff, 0x7d0);
 }
 
 static uint8_t

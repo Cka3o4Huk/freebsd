@@ -45,7 +45,7 @@ __FBSDID("$FreeBSD$");
 #include "bcm_dma_desc.h"
 #include "bcm_dma_reg.h"
 #include "bcm_dma_ops.h"
-#include "bcm_dma_ring.h"
+#include "bcm_dma_ringvar.h"
 
 /*
  * Generic functions
@@ -174,6 +174,7 @@ bcm_dma_64_setdesc(struct bcm_dma_ring *dr,
 	addrhi = (((uint64_t) dmaaddr >> 32) & ~BCM_DMA_ADDR_MASK);
 	addrext = (((uint64_t) dmaaddr >> 32) & BCM_DMA_ADDR_MASK) >>
 	    30;
+	/* XXX: why we need it? */
 	addrhi |= (0x40000000 << 1);
 	if (slot == dr->dr_numslots - 1)
 		ctl0 |= BCM_DMA64_DCTL0_DTABLEEND;

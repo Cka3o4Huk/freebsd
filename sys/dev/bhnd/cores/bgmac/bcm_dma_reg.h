@@ -43,7 +43,8 @@
 #define	BCM_DMA64_RXBASE		0x20
 
 #define	BCM_DMA32_RXDPTR		0x00000fff
-#define	BCM_DMA64_RXSTATDPTR		0x00001fff
+/* XXX: was 1fff, but gmac sets this bit after first cycle and doesn't use it for pointer */
+#define	BCM_DMA64_RXSTATDPTR		0x00000fff
 
 
 #endif /* SYS_DEV_BHND_CORES_BGMAC_BCM_DMA_REG_H_ */
