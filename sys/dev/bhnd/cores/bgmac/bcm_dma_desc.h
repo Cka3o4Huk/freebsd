@@ -13,7 +13,7 @@ struct bcm_dmadesc_meta {
 	bus_addr_t			mt_paddr;
 	struct mbuf			*mt_m;
 	//struct ieee80211_node		*mt_ni;
-	uint8_t				mt_txtype;
+//	uint8_t				mt_txtype;
 #define	BCM_DMADESC_METATYPE_HEADER	0
 #define	BCM_DMADESC_METATYPE_BODY	1
 	uint8_t				mt_islast;

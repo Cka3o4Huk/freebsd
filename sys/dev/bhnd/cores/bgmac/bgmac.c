@@ -44,6 +44,7 @@
 #include <sys/bus.h>
 #include <sys/rman.h>
 #include <sys/socket.h>
+#include <sys/sockio.h>
 
 #include <sys/kdb.h>
 
@@ -85,6 +86,8 @@
 #include "bgmacreg.h"
 
 #include "bcm_dma.h"
+
+MALLOC_DEFINE(M_BHND_BGMAC, "bgmac", "Structures allocated by bgmac driver");
 
 struct resource_spec bgmac_rspec[BGMAC_MAX_RSPEC] = {
 	{ SYS_RES_MEMORY,	0,	RF_ACTIVE },
@@ -128,6 +131,7 @@ static void	bgmac_stat(struct ifnet *, struct ifmediareq *req);
 static void	bgmac_intr(void *arg);
 static int	bgmac_get_config(struct bgmac_softc *sc);
 
+
 /**
  * Internals
  */
@@ -135,13 +139,11 @@ static int	bgmac_setup_interface(device_t dev);
 /* set configuration register, requires reset */
 static void	bgmac_set_cmdcfg(struct bgmac_softc * sc, uint32_t val);
 
-/*
- * DMA
- */
-//static int	bgmac_dma_alloc(struct bgmac_softc *sc);
-//static void	bgmac_dma_ring_addr(void *arg, bus_dma_segment_t *seg,
-//		    int nseg, int error);
+static void	bgmac_init(void* sc);
+static int	bgmac_ioctl(if_t ifp, u_long command, caddr_t data);
 
+static void	bgmac_set_rx_mode(struct bgmac_softc * sc);
+static void	bgmac_stop(struct bgmac_softc * sc);
 /*
  * **************************** Implementation ****************************
  */
@@ -191,15 +193,16 @@ bgmac_attach(device_t dev)
 
 	/* set number of interrupts per frame */
 	bus_write_4(sc->mem, BGMAC_REG_INTR_RECV_LAZY,
-			1 << BGMAC_REG_INTR_RECV_LAZY_FC_SHIFT);
+	    1 << BGMAC_REG_INTR_RECV_LAZY_FC_SHIFT);
 	bus_write_4(sc->mem, BGMAC_REG_INTERRUPT_MASK,
-			BGMAC_REG_INTR_STATUS_ERR | BGMAC_REG_INTR_STATUS_RX);
+	    BGMAC_REG_INTR_STATUS_ERR | BGMAC_REG_INTR_STATUS_RX |
+	    BGMAC_REG_INTR_STATUS_TX);
 
 	/* TODO: use BHND_DEBUG */
 	device_printf(dev, "before cmd_cfg: %x\n",
 	    bus_read_4(sc->mem, BGMAC_REG_CMD_CFG));
 
-	bgmac_set_cmdcfg(sc, BGMAC_REG_CMD_CFG_RX | BGMAC_REG_CMD_CFG_PROM);
+	bgmac_set_cmdcfg(sc, BGMAC_REG_CMD_CFG_PROM);
 
 	device_printf(dev, "after cmd_cfg: %x\n",
 	    bus_read_4(sc->mem, BGMAC_REG_CMD_CFG));
@@ -213,6 +216,17 @@ bgmac_attach(device_t dev)
 	BGMACDUMP(sc);
 
 	return 0;
+}
+
+static void
+bgmac_init(void* arg)
+{
+	struct bgmac_softc	*sc;
+
+	sc = (struct bgmac_softc*) arg;
+	/* do nothing for a while */
+	sc->ifp->if_drv_flags |= IFF_DRV_RUNNING;
+	sc->ifp->if_drv_flags &= ~IFF_DRV_OACTIVE;
 }
 
 static void
@@ -259,9 +273,15 @@ bgmac_setup_interface(device_t dev)
 
 	sc = device_get_softc(dev);
 	ifp = sc->ifp	= if_alloc(IFT_ETHER);
+
 	ifp->if_softc = sc;
 
 	if_initname(ifp, device_get_name(dev), device_get_unit(dev));
+	if_setflags(ifp, IFF_BROADCAST | IFF_SIMPLEX | IFF_MULTICAST);
+
+	if_setinitfn(ifp, bgmac_init);
+	if_setioctlfn(ifp, bgmac_ioctl);
+	if_setstartfn(ifp, bgmac_start);
 
 	error = bgmac_get_config(sc);
 	if (error) {
@@ -283,8 +303,7 @@ bgmac_setup_interface(device_t dev)
 
 
 	ether_ifattach(ifp, sc->addr);
-
-	ifp->if_capabilities = ifp->if_capenable = 0;
+	ifp->if_capabilities = ifp->if_capenable = IFCAP_RXCSUM | IFCAP_TXCSUM;
 
 	/*
 	 * Hook interrupt
@@ -392,7 +411,7 @@ bgmac_readreg(device_t dev, int phy, int reg)
 	int tmp;
 
 	if (bgmac_phyreg_op(dev, PHY_READ, phy, reg, &tmp)) {
-		device_printf(dev, "phy_readreg error!!!\n");
+		BHND_ERROR_DEV(dev, "phy_readreg: phy=%x reg=%x", phy, reg);
 		return (-1);
 	}
 
@@ -406,6 +425,7 @@ bgmac_writereg(device_t dev, int phy, int reg, int val)
 
 	tmp = val;
 	if (bgmac_phyreg_op(dev, PHY_WRITE, phy, reg, &tmp)) {
+		BHND_ERROR_DEV(dev, "phy_writereg: phy=%x reg=%x", phy, reg);
 		return (-1);
 	}
 
@@ -457,6 +477,14 @@ bgmac_intr(void *arg)
 	bus_write_4(sc->mem, BGMAC_REG_INTERRUPT_MASK, 0);
 	bus_read_4(sc->mem, BGMAC_REG_INTERRUPT_MASK);
 
+	if (intr_status & BGMAC_REG_INTR_STATUS_TX) {
+		BHND_ERROR_DEV(sc->dev, "TX!");
+		BGMACDUMP(sc);
+		//kdb_enter("bgmac_error", "unimplemented TX");
+		bcm_dma_tx(sc->dma->wme[0]);
+		intr_status &= ~BGMAC_REG_INTR_STATUS_RX;
+	}
+
 	if (intr_status & BGMAC_REG_INTR_STATUS_RX) {
 		BHND_TRACE_DEV(sc->dev, "RX!");
 		bcm_dma_rx(sc->dma->rx);
@@ -478,12 +506,69 @@ bgmac_intr(void *arg)
 	}
 
 	/* enable interrupt */
-	bus_write_4(sc->mem, BGMAC_REG_INTERRUPT_MASK, BGMAC_REG_INTR_STATUS_RX
+	bus_write_4(sc->mem, BGMAC_REG_INTERRUPT_MASK,
+	   BGMAC_REG_INTR_STATUS_RX | BGMAC_REG_INTR_STATUS_TX
 	   | BGMAC_REG_INTR_STATUS_ERR);
 	intr_status = bus_read_4(sc->mem, BGMAC_REG_INTERRUPT_MASK);
 	BHND_TRACE_DEV(sc->dev, "bgmac_intr: enable intr 0x%x\n", intr_status);
 
 	return;
+}
+
+/**
+ * TX path
+ */
+
+
+/**
+ * IOCTL
+ */
+
+static int
+bgmac_ioctl(if_t ifp, u_long command, caddr_t data)
+{
+	struct bgmac_softc	*sc;
+	struct ifreq		*ifr;
+	//struct mii_data		*mii;
+	int			 error;
+
+	sc = if_getsoftc(ifp);
+	ifr = (struct ifreq *) data;
+	error = 0;
+
+	switch (command) {
+	case SIOCSIFFLAGS:
+		/* TODO: add locking */
+		//BFE_LOCK(sc);
+		if (ifp->if_flags & IFF_UP) {
+			if (ifp->if_drv_flags & IFF_DRV_RUNNING)
+				/* TODO: start rx */
+				//bfe_set_rx_mode(sc);
+				bgmac_set_rx_mode(sc);
+//			else if ((sc->bfe_flags & BFE_FLAG_DETACH) == 0)
+//				bfe_init_locked(sc);
+		} else if (ifp->if_drv_flags & IFF_DRV_RUNNING)
+			bgmac_stop(sc);
+//		BFE_UNLOCK(sc);
+		break;
+	case SIOCADDMULTI:
+	case SIOCDELMULTI:
+		/* XXX: implement SIOCDELMULTI */
+		error = 0;
+		break;
+	case SIOCGIFMEDIA:
+	case SIOCSIFMEDIA:
+		error = 0;
+//		error = ifmedia_ioctl(ifp, ifr, &sc->miibus, command);
+//		mii = device_get_softc(sc->bfe_miibus);
+//		error = ifmedia_ioctl(ifp, ifr, &mii->mii_media, command);
+		break;
+	default:
+		error = ether_ioctl(ifp, command, data);
+		break;
+	}
+
+	return (error);
 }
 
 /**
@@ -532,6 +617,23 @@ bgmac_rxeof(struct device *dev, struct mbuf *m, struct bcm_rx_header *rxhdr)
 	m->m_pkthdr.rcvif = ifp;
 	(*ifp->if_input)(ifp, m);
 }
+
+static void
+bgmac_set_rx_mode(struct bgmac_softc * sc)
+{
+	bgmac_set_cmdcfg(sc, BGMAC_REG_CMD_CFG_RX | BGMAC_REG_CMD_CFG_TX |
+			BGMAC_REG_CMD_CFG_PROM);
+	return;
+}
+
+
+static void
+bgmac_stop(struct bgmac_softc * sc)
+{
+	bgmac_set_cmdcfg(sc, 0);
+	return;
+}
+
 
 /**
  * Driver metadata

@@ -25,7 +25,7 @@ struct bcm_dma_ring {
 	struct bcm_dmadesc_meta		*dr_meta;
 	void				*dr_txhdr_cache;
 	bus_dma_tag_t			dr_ring_dtag;
-	bus_dma_tag_t			dr_txring_dtag;
+	//bus_dma_tag_t			dr_txring_dtag;
 	bus_dmamap_t			dr_spare_dmap; /* only for RX */
 	bus_dmamap_t			dr_ring_dmap;
 	bus_addr_t			dr_txring_paddr;
@@ -66,12 +66,14 @@ struct bcm_dma_ring*	bcm_dma_ring_setup(struct bcm_dma *dma,
 			    int ctl_index,
 			    int for_tx,
 			    int type);
-void			bcm_dma_ringload(struct bcm_dma_ring *dr);
-void			bcm_dma_ringstop(struct bcm_dma_ring *dr);
+void			bcm_dma_ring_load(struct bcm_dma_ring *dr);
+void			bcm_dma_ring_stop(struct bcm_dma_ring *dr);
 void			bcm_dma_ring_free(struct bcm_dma_ring **dr);
 int			bcm_dma_ring_alloc(struct bcm_dma *dma,
 			    struct bcm_dma_ring *dr);
+
 int			bcm_dmaring_get_freeslot(struct bcm_dma_ring *dr);
+int			bcm_dmaring_get_curslot(struct bcm_dma_ring *dr);
 int			bcm_dmaring_get_nextslot(struct bcm_dma_ring *dr,
 			    int slot);
 

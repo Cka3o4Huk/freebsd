@@ -90,7 +90,8 @@ bcm_dma_ring_setup(struct bcm_dma *dma, struct resource *res, int ctl_id,
 
 	if (is_tx) {
 		dr->dr_is_tx = 1;
-		dr->dr_curslot = -1;
+		dr->dr_curslot = 0;
+		dr->dr_usedslot = dr->dr_numslots;
 	} else {
 		KASSERT(dr->dr_index == 0, ("%s:%d: fail", __func__, __LINE__));
 
@@ -139,9 +140,9 @@ bcm_dma_ring_setup(struct bcm_dma *dma, struct resource *res, int ctl_id,
 //			goto fail1;
 //		}
 //
-//		/*
-//		 * Create TX ring DMA stuffs
-//		 */
+		/*
+		 * Create TX ring DMA stuffs
+		 */
 //		error = bus_dma_tag_create(dma->parent_dtag,
 //				    BCM_ALIGN, 0,
 //				    BUS_SPACE_MAXADDR,
@@ -158,8 +159,8 @@ bcm_dma_ring_setup(struct bcm_dma *dma, struct resource *res, int ctl_id,
 //			    "can't create TX ring DMA tag: TODO frees\n");
 //			goto fail2;
 //		}
-//
-//		for (i = 0; i < dr->dr_numslots; i += 2) {
+
+		for (i = 0; i < dr->dr_numslots; i++) {
 //			dr->getdesc(dr, i, &desc, &mt);
 //
 //			mt->mt_txtype = BCM_DMADESC_METATYPE_HEADER;
@@ -174,20 +175,20 @@ bcm_dma_ring_setup(struct bcm_dma *dma, struct resource *res, int ctl_id,
 //				goto fail2;
 //			}
 //
-//			dr->getdesc(dr, i + 1, &desc, &mt);
-//
+			dr->getdesc(dr, i, &desc, &mt);
+
 //			mt->mt_txtype = BCM_DMADESC_METATYPE_BODY;
-//			mt->mt_m = NULL;
+			mt->mt_m = NULL;
 //			mt->mt_ni = NULL;
-//			mt->mt_islast = 1;
-//			error = bus_dmamap_create(dma->txbuf_dtag, 0,
-//			    &mt->mt_dmap);
-//			if (error) {
-//				device_printf(sc->sc_dev,
-//				     "can't create RX buf DMA map\n");
-//				goto fail2;
-//			}
-//		}
+			mt->mt_islast = 1;
+			error = bus_dmamap_create(dma->txbuf_dtag, 0,
+			    &mt->mt_dmap);
+			if (error) {
+				device_printf(rman_get_device(dr->res),
+				     "can't create TX buf DMA map\n");
+				goto out; /* XXX wrong! */
+			}
+		}
 	} else {
 		error = bus_dmamap_create(dma->rxbuf_dtag, 0,
 		    &dr->dr_spare_dmap);
@@ -217,8 +218,6 @@ bcm_dma_ring_setup(struct bcm_dma *dma, struct resource *res, int ctl_id,
 
 		bus_dmamap_sync(dr->dr_ring_dtag, dr->dr_ring_dmap,
 		    BUS_DMASYNC_PREWRITE);
-
-		dr->dr_usedslot = dr->dr_numslots;
 	}
 
       out:
@@ -293,7 +292,6 @@ bcm_dma_ring_alloc(struct bcm_dma *dma, struct bcm_dma_ring *dr)
 	return (0);
 }
 
-
 void
 bcm_dma_ring_free(struct bcm_dma_ring **dr)
 {
@@ -350,12 +348,11 @@ bcm_dma_ring_free_descbufs(struct bcm_dma_ring *dr)
 			continue;
 		}
 		if (dr->dr_is_tx) {
-			if (meta->mt_txtype == BCM_DMADESC_METATYPE_HEADER)
-				bus_dmamap_unload(dr->dr_txring_dtag,
-				    meta->mt_dmap);
-			else if (meta->mt_txtype == BCM_DMADESC_METATYPE_BODY)
-				bus_dmamap_unload(dr->dma->txbuf_dtag,
-				    meta->mt_dmap);
+//			if (meta->mt_txtype == BCM_DMADESC_METATYPE_HEADER)
+//				bus_dmamap_unload(dr->dr_txring_dtag,
+//				    meta->mt_dmap);
+//			else if (meta->mt_txtype == BCM_DMADESC_METATYPE_BODY)
+			bus_dmamap_unload(dr->dma->txbuf_dtag, meta->mt_dmap);
 		} else
 			bus_dmamap_unload(dr->dma->rxbuf_dtag, meta->mt_dmap);
 		bcm_dma_ring_free_descbuf(meta);
@@ -380,25 +377,27 @@ bcm_dma_ring_free_descbuf(struct bcm_dmadesc_meta *meta)
 }
 
 void
-bcm_dma_ringload(struct bcm_dma_ring *dr)
+bcm_dma_ring_load(struct bcm_dma_ring *dr)
 {
 	uint64_t	ring64;
 	uint32_t 	addrext, ring32, value;
-	uint32_t 	trans = 0; ////struct bcm_softc *sc = dr->dr_mac->mac_sc;
-			    //siba_dma_translation(sc->sc_dev);
+	uint32_t 	trans;
+	device_t	dev;
 
-	printf("ringload[%p]\n", dr);
+	dev = rman_get_device(dr->res);
+
+	BHND_DEBUG_DEV(dev, "ring_load[%p]", dr);
 
 	trans = 0;
 
 	if (dr->dr_is_tx)
-		dr->dr_curslot = -1;
+		dr->dr_curslot = 0;
 	else
 		dr->dr_usedslot = dr->dr_numslots;
 
 	if (dr->dr_type == BCM_DMA_64BIT) {
 		ring64 = (uint64_t)(dr->dr_ring_dmabase);
-		printf("ringload| dr_ring_dmabase: 0x%jx\n", ring64);
+		BHND_DEBUG_DEV(dev, "dr_ring_dmabase: 0x%jx\n", ring64);
 
 		addrext = ((ring64 >> 32) & BCM_DMA_ADDR_MASK) >> 30;
 
@@ -410,7 +409,7 @@ bcm_dma_ringload(struct bcm_dma_ring *dr)
 		value |= BCM_DMA_CTL_ENABLE;
 		value |= 0x800; /* disable parity - TODO: move to define*/
 		value |= BCM_DMA_SHIFT(addrext, BCM_DMA_CTL_ADDREXT);
-		printf("ringload| 0x%x -> 0x%x\n", dr->dr_base + BCM_DMA_CTL,
+		BHND_DEBUG_DEV(dev, "CTL: 0x%x->0x%x", dr->dr_base + BCM_DMA_CTL,
 		    value);
 		BCM_DMA_WRITE(dr, BCM_DMA_CTL, value);
 
@@ -444,7 +443,7 @@ bcm_dma_ringload(struct bcm_dma_ring *dr)
 }
 
 void
-bcm_dma_ringstop(struct bcm_dma_ring *dr)
+bcm_dma_ring_stop(struct bcm_dma_ring *dr)
 {
 
 	if (dr == NULL)
@@ -476,6 +475,16 @@ bcm_dmaring_get_freeslot(struct bcm_dma_ring *dr)
 	BCM_ASSERT_LOCKED(dr->res);
 
 	return (dr->dr_numslots - dr->dr_usedslot);
+}
+
+int
+bcm_dmaring_get_curslot(struct bcm_dma_ring *dr)
+{
+//	BCM_ASSERT_LOCKED(dr->res);
+
+//	KASSERT(slot >= -1 && slot <= dr->dr_numslots - 1,
+//	    ("%s:%d: fail", __func__, __LINE__));
+	return (dr->dr_curslot);
 }
 
 int

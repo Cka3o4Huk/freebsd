@@ -122,10 +122,13 @@ bcm_dma_attach(device_t dev, struct resource *res, struct bcm_dma *dma)
 	if (error) {
 		return (error);
 	}
-//	dma->wme[WME_AC_BK] = bcm_dma_ringsetup(mac, 0, 1, dma->dmatype);
-//	if (!dma->wme[WME_AC_BK])
-//		goto fail2;
-//
+
+	dma->wme[0] = bcm_dma_ring_setup(dma, res, 0, 1, dma->dmatype);
+	if (!dma->wme[0]) {
+		/* TODO: add cleanup */
+		return (ENXIO);
+	}
+
 //	dma->wme[WME_AC_BE] = bcm_dma_ringsetup(mac, 1, 1, dma->dmatype);
 //	if (!dma->wme[WME_AC_BE])
 //		goto fail3;
@@ -260,13 +263,13 @@ bcm_dma_init(struct bcm_dma *dma)
 {
 	/* setup TX DMA channels. */
 	/* TODO: wme =? QOS */
-//	bcm_dma_setup(dma->wme[WME_AC_BK]);
+	bcm_dma_ring_load(dma->wme[0]);
 //	bcm_dma_setup(dma->wme[WME_AC_BE]);
 //	bcm_dma_setup(dma->wme[WME_AC_VI]);
 //	bcm_dma_setup(dma->wme[WME_AC_VO]);
 //	bcm_dma_setup(dma->mcast);
 	/* setup RX DMA channel. */
-	bcm_dma_ringload(dma->rx);
+	bcm_dma_ring_load(dma->rx);
 }
 
 void
@@ -277,8 +280,8 @@ bcm_dma_stop(struct bcm_dma *dma)
 //		return;
 //	dma = &mac->mac_method.dma;
 
-	bcm_dma_ringstop(dma->rx);
-//	bcm_dma_ringstop(&dma->wme[WME_AC_BK]);
+	bcm_dma_ring_stop(dma->rx);
+	bcm_dma_ring_stop(dma->wme[0]);
 //	bcm_dma_ringstop(&dma->wme[WME_AC_BE]);
 //	bcm_dma_ringstop(&dma->wme[WME_AC_VI]);
 //	bcm_dma_ringstop(&dma->wme[WME_AC_VO]);
@@ -295,7 +298,7 @@ bcm_dma_free(struct bcm_dma *dma)
 //	dma = &mac->mac_method.dma;
 
 	bcm_dma_ring_free(&dma->rx);
-//	bcm_dma_ringfree(&dma->wme[WME_AC_BK]);
+	bcm_dma_ring_free(&dma->wme[0]);
 //	bcm_dma_ringfree(&dma->wme[WME_AC_BE]);
 //	bcm_dma_ringfree(&dma->wme[WME_AC_VI]);
 //	bcm_dma_ringfree(&dma->wme[WME_AC_VO]);

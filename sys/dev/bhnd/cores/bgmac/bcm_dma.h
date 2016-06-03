@@ -101,4 +101,8 @@ void		bcm_dmamap_callback_mbuf(void *arg, bus_dma_segment_t *seg,
 void		bgmac_rxeof(struct device *dev, struct mbuf *m,
 		    struct bcm_rx_header *rxhdr);
 
+int		bcm_dma_tx_start(struct bcm_dma *dma, struct mbuf *m);
+void		bcm_dma_tx(struct bcm_dma_ring *dr);
+
+
 #endif /* SYS_DEV_BHND_CORES_BGMAC_BCM_DMA_H_ */

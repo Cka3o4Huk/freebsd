@@ -37,7 +37,6 @@
 #define BGMAC_MAX_RSPEC	3
 
 MALLOC_DECLARE(M_BHND_BGMAC);
-MALLOC_DEFINE(M_BHND_BGMAC, "bgmac", "Structures allocated by bgmac driver");
 
 struct bgmac_softc {
 	device_t 		 dev;
