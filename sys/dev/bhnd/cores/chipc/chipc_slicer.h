@@ -41,6 +41,8 @@
 #define	TRX_MAGIC 	0x30524448
 #define	CFE_MAGIC 	0x43464531
 #define	NVRAM_MAGIC	0x48534C46
+#define	CHIPC_SLICER_STEP	0x1000
+#define	CHIPC_SLICER_CFGSIZE	0x10000
 
 void		chipc_register_slicer(chipc_flash flash_type);
 int		chipc_slicer_spi(device_t dev, const char *provider,
