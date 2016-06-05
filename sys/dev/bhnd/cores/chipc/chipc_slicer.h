@@ -38,6 +38,9 @@
 
 #define NVRAM_MAX_SIZE	0x10000
 
+#define	CHIPC_SLICER_STEP	0x1000
+#define	CHIPC_SLICER_CFGSIZE	0x20000
+
 int		chipc_slicer_spi(device_t dev, struct flash_slice *slices,
 		    int *nslices);
 int		chipc_slicer_cfi(device_t dev, struct flash_slice *slices,
