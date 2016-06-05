@@ -56,8 +56,19 @@ __FBSDID("$FreeBSD$");
 #include <dev/cfi/cfi_var.h>
 #include "chipc_spi.h"
 
+struct chipc_slicer_info {
+	uint32_t	fw_offset;
+	uint32_t	fw_size;
+	uint32_t	fw_end;
+	uint32_t	fw_magic;
+	uint32_t	total_size;
+};
+
 static int	chipc_slicer_walk(device_t dev, struct resource *res,
 		    struct flash_slice *slices, int *nslices);
+static int	chipc_slicer_scan(device_t dev, struct resource *res,
+		    uint32_t *fwmagics, uint32_t *auxmagics,
+		    struct chipc_slicer_info *out);
 
 void
 chipc_register_slicer(chipc_flash flash_type)
@@ -136,6 +147,61 @@ chipc_slicer_spi(device_t dev, const char *provider __unused,
 	return (chipc_slicer_walk(dev, sc->sc_flash_res, slices, nslices));
 }
 
+static int
+chipc_slicer_scan(device_t dev, struct resource *res, uint32_t *fwmagics,
+    uint32_t *auxmagics, struct chipc_slicer_info *out)
+{
+	uint32_t			*curmagic;
+	uint32_t			 offset;
+	uint32_t			 val;
+
+	out->fw_offset = UINT32_MAX;
+	out->total_size = out->fw_size = rman_get_size(res);
+
+	BHND_TRACE_DEV(dev, "slicer: scanning memory [%x bytes] for headers...",
+	    out->total_size);
+	for (offset = 0; offset < out->total_size; offset += CHIPC_SLICER_STEP) {
+		val = bus_read_4(res, offset);
+
+		/* Check end of firmware image - new magic number */
+		if ((out->fw_offset < offset) && (out->fw_size > offset))
+			for(curmagic = auxmagics; *curmagic != 0; curmagic++) {
+				if (val != *curmagic)
+					continue;
+
+				out->fw_size = offset - out->fw_offset;
+				break;
+			}
+
+		for (curmagic = fwmagics; *curmagic != 0; curmagic++) {
+			if (val != *curmagic)
+				continue;
+
+			if (offset < out->fw_offset) {
+				out->fw_offset = offset;
+				out->fw_magic = *curmagic;
+				continue;
+			}
+			/* Second shadow of firmware magic is found - STOP */
+			out->total_size = offset - out->fw_offset;
+
+			/*
+			 * If firmware image is last partition on flash, we
+			 * need to adjust fw_size
+			 */
+			out->fw_size = MIN(out->fw_size,
+					out->total_size - out->fw_offset);
+			out->fw_end = out->fw_size + out->fw_offset;
+			return (0);
+		}
+	}
+
+	return (-1);
+}
+
+uint32_t	fw_magics[] = { TRX_MAGIC, 0 };
+uint32_t	aux_magics[] = { CFE_MAGIC, NVRAM_MAGIC, 0 };
+
 /*
  * Main processing part
  */
@@ -143,64 +209,60 @@ static int
 chipc_slicer_walk(device_t dev, struct resource *res,
     struct flash_slice *slices, int *nslices)
 {
-	uint32_t	 fw_len;
-	uint32_t	 fs_ofs;
-	uint32_t	 val;
-	uint32_t	 ofs_trx;
-	int		 flash_size;
+	struct chipc_slicer_info	result;
+	uint32_t	 		fs_ofs;
+	uint32_t			fw_len;
+	int				err;
 
 	*nslices = 0;
 
-	flash_size = rman_get_size(res);
-	ofs_trx = flash_size;
+	err = chipc_slicer_scan(dev, res, fw_magics, aux_magics, &result);
+	if (err != 0) {
+		BHND_ERROR_DEV(dev, "slicer: can't identify flash size");
+		return (0);
+	}
 
-	BHND_TRACE_DEV(dev, "slicer: scanning memory [%x bytes] for headers...",
-	    flash_size);
+	BHND_INFO_DEV(dev, "Firmware image [0x%x]: 0x%x - 0x%x",
+			result.fw_magic,
+			result.fw_offset,
+			result.fw_end);
 
-	/* Find FW header in flash memory with step=128Kb (0x1000) */
-	for(uint32_t ofs = 0; ofs < flash_size; ofs+= 0x1000){
-		val = bus_read_4(res, ofs);
-		switch (val) {
-		case TRX_MAGIC:
-			/* check for second TRX */
-			if (ofs_trx < ofs) {
-				BHND_TRACE_DEV(dev, "stop on 2nd TRX: %x", ofs);
-				break;
-			}
+	switch (result.fw_magic) {
+	case TRX_MAGIC:
+		/* read last offset of TRX header */
+		fw_len = bus_read_4(res, result.fw_offset + 4);
+		fs_ofs = bus_read_4(res, result.fw_offset + 24);
+		BHND_TRACE_DEV(dev, "TRX filesystem: 0x%x-0x%x", fs_ofs,
+		   fw_len + result.fw_offset);
 
-			BHND_TRACE("TRX found: %x", ofs);
-			ofs_trx = ofs;
-			/* read last offset of TRX header */
-			fs_ofs = bus_read_4(res, ofs + 24);
-			BHND_TRACE("FS offset: %x", fs_ofs);
-
-			/*
-			 * GEOM IO will panic if offset is not aligned
-			 * on sector size, i.e. 512 bytes
-			 */
-			if (fs_ofs % 0x200 != 0) {
-				BHND_WARN("WARNING! filesystem offset should be"
-				    " aligned on sector size (%d bytes)", 0x200);
-				BHND_WARN("ignoring TRX firmware image");
-				break;
-			}
-
-			slices[*nslices].base = ofs + fs_ofs;
-			//XXX: fully sized? any other partition?
-			fw_len = bus_read_4(res, ofs + 4);
-			slices[*nslices].size = fw_len - fs_ofs;
-			slices[*nslices].label = "rootfs";
-			*nslices += 1;
-			break;
-		case CFE_MAGIC:
-			BHND_TRACE("CFE found: %x", ofs);
-			break;
-		case NVRAM_MAGIC:
-			BHND_TRACE("NVRAM found: %x", ofs);
-			break;
-		default:
+		/*
+		 * GEOM IO will panic if offset is not aligned
+		 * on sector size, i.e. 512 bytes
+		 */
+		if (fs_ofs % 0x200 != 0) {
+			BHND_WARN_DEV(dev, "WARNING! filesystem offset should be"
+			    " aligned on sector size (%d bytes)", 0x200);
+			BHND_WARN_DEV(dev, "ignoring TRX firmware image");
 			break;
 		}
+
+		slices[*nslices].base = result.fw_offset + fs_ofs;
+		slices[*nslices].size = fw_len - fs_ofs;
+		slices[*nslices].label = "rootfs";
+		*nslices += 1;
+
+		if (fw_len + CHIPC_SLICER_CFGSIZE <= result.fw_size) {
+			/* configuration slice */
+			slices[*nslices].size = CHIPC_SLICER_CFGSIZE;
+			slices[*nslices].base = result.fw_end -
+						    slices[*nslices].size;
+			slices[*nslices].base = (slices[*nslices].base / 0x10000) * 0x10000;
+			slices[*nslices].label = "cfg";
+			*nslices += 1;
+		}
+		break;
+	default:
+		break;
 	}
 
 	BHND_TRACE("slicer: done");
