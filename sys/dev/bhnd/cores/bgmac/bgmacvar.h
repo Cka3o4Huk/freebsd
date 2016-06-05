@@ -39,6 +39,7 @@
 MALLOC_DECLARE(M_BHND_BGMAC);
 
 struct bgmac_softc {
+	struct mtx		 sc_mtx;
 	device_t 		 dev;
 	device_t		 miibus;
 	device_t		 mdio;
@@ -59,3 +60,11 @@ typedef enum{
 	PHY_READ,
 	PHY_WRITE
 }  phymode ;
+
+#define	BGMAC_LOCK_INIT(sc) \
+	mtx_init(&(sc)->sc_mtx, device_get_nameunit((sc)->dev), \
+	    MTX_NETWORK_LOCK, MTX_DEF)
+#define	BGMAC_LOCK_DESTROY(sc)		mtx_destroy(&(sc)->sc_mtx)
+#define	BGMAC_LOCK(sc)			mtx_lock(&(sc)->sc_mtx)
+#define	BGMAC_UNLOCK(sc)		mtx_unlock(&(sc)->sc_mtx)
+#define	BGMAC_ASSERT_LOCKED(sc)		mtx_assert(&(sc)->sc_mtx, MA_OWNED)

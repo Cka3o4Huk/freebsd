@@ -44,6 +44,13 @@
 #define		BGMAC_REG_INTR_STATUS_ERR_OVER	0x00004000
 #define		BGMAC_REG_INTR_STATUS_ERR_DESC	0x00000400
 
+enum bgmac_intr_status
+{
+	I_ERR = 1,
+	I_RX = 2,
+	I_TX = 4
+};
+
 #define	BGMAC_REG_INTERRUPT_MASK		0x024  //0
 #define	BGMAC_REG_GP_TIMER			0x028  //0
 

@@ -34,8 +34,6 @@
  *
  */
 
-#define	BHND_LOGGING	BHND_INFO_LEVEL
-
 #include <sys/cdefs.h>
 #include <sys/types.h>
 #include <sys/param.h>
@@ -45,6 +43,7 @@
 #include <sys/rman.h>
 #include <sys/socket.h>
 #include <sys/sockio.h>
+#include <sys/mutex.h>
 
 #include <sys/kdb.h>
 
@@ -78,6 +77,7 @@
 #include <machine/bus.h>
 #include <machine/resource.h>
 
+#define	BHND_LOGGING	BHND_INFO_LEVEL
 #include <dev/bhnd/bhnd.h>
 #include <dev/bhnd/bhnd_ids.h>
 
@@ -100,55 +100,41 @@ struct bhnd_device bgmac_match[] = {
 	BHND_DEVICE_END,
 };
 
-
 /****************************************************************************
  * Prototypes
  ****************************************************************************/
-
 static int	bgmac_probe(device_t dev);
 static int	bgmac_attach(device_t dev);
 
-/*
- * MII interface
- */
+/* MII interface */
 static int	bgmac_readreg(device_t dev, int phy, int reg);
 static int	bgmac_writereg(device_t dev, int phy, int reg, int val);
-
 static int	bgmac_phyreg_poll(device_t dev, uint32_t reg, uint32_t mask);
 static int	bgmac_phyreg_op(device_t dev, phymode op, int phy, int reg,
 		    int* val);
-#if 0
-/*
- * Driver callbacks for media status and change requests.
- */
-static int	bgmac_change(struct ifnet *);
-static void	bgmac_stat(struct ifnet *, struct ifmediareq *req);
-#endif
 
-/**
- * Interrupt flow
- */
+/* Interrupt flow */
 static void	bgmac_intr(void *arg);
+
+/* NVRAM variables */
 static int	bgmac_get_config(struct bgmac_softc *sc);
 
+/* chip manipulations */
+static void	bgmac_chip_start_txrx(struct bgmac_softc * sc);
+static void	bgmac_chip_stop_txrx(struct bgmac_softc * sc);
+static void	bgmac_chip_set_macaddr(struct bgmac_softc * sc);
+static void	bgmac_chip_set_cmdcfg(struct bgmac_softc * sc, uint32_t val);
+static void	bgmac_chip_set_intr_mask(struct bgmac_softc *sc,
+		    enum bgmac_intr_status st);
 
-/**
- * Internals
- */
-static int	bgmac_setup_interface(device_t dev);
-/* set configuration register, requires reset */
-static void	bgmac_set_cmdcfg(struct bgmac_softc * sc, uint32_t val);
+/* ifnet(9) interface */
+static void	bgmac_if_setup(device_t dev);
+static void	bgmac_if_init(void* sc);
+static int	bgmac_if_ioctl(if_t ifp, u_long command, caddr_t data);
 
-static void	bgmac_init(void* sc);
-static int	bgmac_ioctl(if_t ifp, u_long command, caddr_t data);
-
-static void	bgmac_set_rx_mode(struct bgmac_softc * sc);
-static void	bgmac_stop(struct bgmac_softc * sc);
-/*
- * **************************** Implementation ****************************
- */
-
-
+/****************************************************************************
+ * Implementation
+ ****************************************************************************/
 static int
 bgmac_probe(device_t dev)
 {
@@ -187,50 +173,77 @@ bgmac_attach(device_t dev)
 	sc->mem = res[0];
 	sc->irq = res[1];
 
-	BGMACDUMP(sc);
+	error = bgmac_get_config(sc);
+	if (error) {
+		BHND_ERROR_DEV(dev, "can't get bgmac config from NVRAM: %d",
+		    error);
+		return (ENXIO);
+	}
 
-	error = bgmac_setup_interface(dev);
+	bgmac_chip_set_macaddr(sc);
 
-	/* set number of interrupts per frame */
-	bus_write_4(sc->mem, BGMAC_REG_INTR_RECV_LAZY,
-	    1 << BGMAC_REG_INTR_RECV_LAZY_FC_SHIFT);
-	bus_write_4(sc->mem, BGMAC_REG_INTERRUPT_MASK,
-	    BGMAC_REG_INTR_STATUS_ERR | BGMAC_REG_INTR_STATUS_RX |
-	    BGMAC_REG_INTR_STATUS_TX);
+	/*
+	 * Hook interrupt
+	 */
+	error = bus_setup_intr(dev, sc->irq, INTR_TYPE_NET | INTR_MPSAFE,
+			NULL, bgmac_intr, sc, &sc->intrhand);
+	if (error) {
+		BHND_ERROR_DEV(dev, "can't setup interrupt");
+		/*
+		 * TODO: cleanup / detach
+		 */
+		return (error);
+	}
 
-	/* TODO: use BHND_DEBUG */
-	device_printf(dev, "before cmd_cfg: %x\n",
-	    bus_read_4(sc->mem, BGMAC_REG_CMD_CFG));
+	sc->dma = malloc(sizeof(struct bcm_dma), M_BHND_BGMAC, M_WAITOK);
+	if (sc->dma == NULL) {
+		BHND_ERROR_DEV(dev, "can't allocate memory for bcm_dma");
+		/*
+		 * TODO: cleanup
+		 */
+		return (ENOMEM);
+	}
 
-	bgmac_set_cmdcfg(sc, BGMAC_REG_CMD_CFG_PROM);
+	error = bcm_dma_attach(dev, sc->mem, sc->dma);
+	if (error) {
+		BHND_ERROR_DEV(dev, "error occurried during bcm_dma_attach: %d",
+		    error);
+		/*
+		 * TODO: cleanup
+		 */
+		return (error);
+	}
 
-	device_printf(dev, "after cmd_cfg: %x\n",
-	    bus_read_4(sc->mem, BGMAC_REG_CMD_CFG));
-
-	device_printf(dev, "max len: %x\n",
-	    bus_read_4(sc->mem, BGMAC_REG_RX_MAX_LEN));
+	bgmac_if_setup(dev);
+	BGMAC_LOCK_INIT(sc);
 
 	sc->mdio = device_add_child(dev, "mdio", -1);
 	bus_generic_attach(dev);
-
-	BGMACDUMP(sc);
 
 	return 0;
 }
 
 static void
-bgmac_init(void* arg)
+bgmac_chip_set_intr_mask(struct bgmac_softc *sc, enum bgmac_intr_status st)
 {
-	struct bgmac_softc	*sc;
+	uint32_t	mask;
+	uint32_t	feed;
 
-	sc = (struct bgmac_softc*) arg;
-	/* do nothing for a while */
-	sc->ifp->if_drv_flags |= IFF_DRV_RUNNING;
-	sc->ifp->if_drv_flags &= ~IFF_DRV_OACTIVE;
+	mask = 0;
+	if (st & I_ERR)
+		mask |= BGMAC_REG_INTR_STATUS_ERR;
+	if (st & I_RX)
+		mask |= BGMAC_REG_INTR_STATUS_RX;
+	if (st & I_TX)
+		mask |= BGMAC_REG_INTR_STATUS_TX;
+
+	bus_write_4(sc->mem, BGMAC_REG_INTERRUPT_MASK, mask);
+	feed = bus_read_4(sc->mem, BGMAC_REG_INTERRUPT_MASK);
+	BHND_TRACE_DEV(sc->dev, "bgmac_intr: 0x%x", feed);
 }
 
 static void
-bgmac_set_cmdcfg(struct bgmac_softc * sc, uint32_t val)
+bgmac_chip_set_cmdcfg(struct bgmac_softc *sc, uint32_t val)
 {
 	uint32_t	tmp;
 
@@ -251,7 +264,7 @@ bgmac_set_cmdcfg(struct bgmac_softc * sc, uint32_t val)
 }
 
 static void
-bgmac_set_macaddr(struct bgmac_softc * sc)
+bgmac_chip_set_macaddr(struct bgmac_softc * sc)
 {
 
 	/*
@@ -261,86 +274,118 @@ bgmac_set_macaddr(struct bgmac_softc * sc)
 	bus_write_4(sc->mem, 0x810, *(((uint16_t*)sc->addr)+2));
 }
 
+static void
+bgmac_chip_start_txrx(struct bgmac_softc * sc)
+{
+
+	BGMAC_ASSERT_LOCKED(sc);
+	bgmac_chip_set_cmdcfg(sc, BGMAC_REG_CMD_CFG_RX | BGMAC_REG_CMD_CFG_TX |
+			BGMAC_REG_CMD_CFG_PROM);
+	return;
+}
+
+static void
+bgmac_chip_stop_txrx(struct bgmac_softc * sc)
+{
+
+	BGMAC_ASSERT_LOCKED(sc);
+	bgmac_chip_set_cmdcfg(sc, 0);
+	return;
+}
+
 /*
  * Setup interface
  */
-static int
-bgmac_setup_interface(device_t dev)
+static void
+bgmac_if_setup(device_t dev)
 {
 	struct bgmac_softc	*sc;
-	int			 error;
 	struct ifnet		*ifp;
 
 	sc = device_get_softc(dev);
-	ifp = sc->ifp	= if_alloc(IFT_ETHER);
-
+	ifp = sc->ifp = if_alloc(IFT_ETHER);
 	ifp->if_softc = sc;
 
 	if_initname(ifp, device_get_name(dev), device_get_unit(dev));
 	if_setflags(ifp, IFF_BROADCAST | IFF_SIMPLEX | IFF_MULTICAST);
-
-	if_setinitfn(ifp, bgmac_init);
-	if_setioctlfn(ifp, bgmac_ioctl);
-	if_setstartfn(ifp, bgmac_start);
-
-	error = bgmac_get_config(sc);
-	if (error) {
-		BHND_ERROR_DEV(dev, "can't get bgmac config from NVRAM: %d",
-		    error);
-		return (ENXIO);
-	}
-
-	bgmac_set_macaddr(sc);
-
-#if 0
-	error = mii_attach(dev, &sc->miibus, ifp, bgmac_change, bgmac_stat,
-	    BMSR_DEFCAPMASK, MII_PHY_ANY, MII_OFFSET_ANY, 0);
-	if (error) {
-		BHND_ERROR_DEV(dev, "mii_attach failed: %d", error);
-		return error;
-	}
-#endif
-
+	if_setinitfn(ifp, bgmac_if_init);
+	if_setioctlfn(ifp, bgmac_if_ioctl);
+	if_setstartfn(ifp, bgmac_if_start);
 
 	ether_ifattach(ifp, sc->addr);
 	ifp->if_capabilities = ifp->if_capenable = IFCAP_RXCSUM | IFCAP_TXCSUM;
 
-	/*
-	 * Hook interrupt
-	 */
-	error = bus_setup_intr(dev, sc->irq, INTR_TYPE_NET | INTR_MPSAFE,
-			NULL, bgmac_intr, sc, &sc->intrhand);
-	if (error) {
-		BHND_ERROR_DEV(dev, "can't setup interrupt");
-		return (error);
-	}
-
-	/*
-	 * TODO: ifmedia_init / add / set
-	 */
-
-	sc->dma = malloc(sizeof(struct bcm_dma), M_BHND_BGMAC, M_WAITOK);
-	if (sc->dma == NULL) {
-		BHND_ERROR_DEV(dev, "can't allocate memory for bcm_dma");
-		return (ENOMEM);
-	}
-
-	error = bcm_dma_attach(dev, sc->mem, sc->dma);
-	if (error) {
-		BHND_ERROR_DEV(dev, "error occurried during bcm_dma_attach: %d",
-		    error);
-		/*
-		 * TODO: cleanup
-		 */
-		return (error);
-	}
-
-	return (0);
+	/* TODO: ifmedia_init / add / set */
+	return;
 }
 
-/*
- * **************************** MII BUS Functions ****************************
- */
+static void
+bgmac_if_init(void* arg)
+{
+	struct bgmac_softc	*sc;
+
+	sc = (struct bgmac_softc*) arg;
+	/* TODO: promiscios mode => ioctl */
+	bgmac_chip_set_cmdcfg(sc, BGMAC_REG_CMD_CFG_PROM);
+
+	/* set number of interrupts per frame */
+	bus_write_4(sc->mem, BGMAC_REG_INTR_RECV_LAZY,
+	    1 << BGMAC_REG_INTR_RECV_LAZY_FC_SHIFT);
+
+	bgmac_chip_set_intr_mask(sc, I_ERR | I_RX | I_TX);
+
+	sc->ifp->if_drv_flags |= IFF_DRV_RUNNING;
+	sc->ifp->if_drv_flags &= ~IFF_DRV_OACTIVE;
+}
+
+static int
+bgmac_if_ioctl(if_t ifp, u_long command, caddr_t data)
+{
+	struct bgmac_softc	*sc;
+	struct ifreq		*ifr;
+	//struct mii_data		*mii;
+	int			 error;
+
+	sc = if_getsoftc(ifp);
+	ifr = (struct ifreq *) data;
+	error = 0;
+
+	switch (command) {
+	case SIOCSIFFLAGS:
+		/* TODO: add locking */
+		BGMAC_LOCK(sc);
+		if (ifp->if_flags & IFF_UP) {
+			if (ifp->if_drv_flags & IFF_DRV_RUNNING)
+				/* TODO: start rx */
+				//bfe_set_rx_mode(sc);
+				bgmac_chip_start_txrx(sc);
+//			else if ((sc->bfe_flags & BFE_FLAG_DETACH) == 0)
+//				bfe_init_locked(sc);
+		} else if (ifp->if_drv_flags & IFF_DRV_RUNNING)
+			bgmac_chip_stop_txrx(sc);
+		BGMAC_UNLOCK(sc);
+		break;
+	case SIOCADDMULTI:
+	case SIOCDELMULTI:
+		/* XXX: implement SIOCDELMULTI */
+		error = 0;
+		break;
+	case SIOCGIFMEDIA:
+	case SIOCSIFMEDIA:
+		error = 0;
+//		error = ifmedia_ioctl(ifp, ifr, &sc->miibus, command);
+//		mii = device_get_softc(sc->bfe_miibus);
+//		error = ifmedia_ioctl(ifp, ifr, &mii->mii_media, command);
+		break;
+	default:
+		error = ether_ioctl(ifp, command, data);
+		break;
+	}
+
+	return (error);
+}
+
+/**************************** MII BUS Functions *****************************/
 
 int bgmac_phyreg_poll(device_t dev,uint32_t reg, uint32_t mask){
 	struct bgmac_softc	*sc;
@@ -408,7 +453,7 @@ bgmac_phyreg_op(device_t dev, phymode op, int phy, int reg, int* val)
 static int
 bgmac_readreg(device_t dev, int phy, int reg)
 {
-	int tmp;
+	int	tmp;
 
 	if (bgmac_phyreg_op(dev, PHY_READ, phy, reg, &tmp)) {
 		BHND_ERROR_DEV(dev, "phy_readreg: phy=%x reg=%x", phy, reg);
@@ -421,7 +466,7 @@ bgmac_readreg(device_t dev, int phy, int reg)
 static int
 bgmac_writereg(device_t dev, int phy, int reg, int val)
 {
-	int tmp;
+	int	tmp;
 
 	tmp = val;
 	if (bgmac_phyreg_op(dev, PHY_WRITE, phy, reg, &tmp)) {
@@ -432,29 +477,7 @@ bgmac_writereg(device_t dev, int phy, int reg, int val)
 	return (0);
 }
 
-#if 0
-/**
- * Media
- */
-
-static int
-bgmac_change(struct ifnet *ifp){
-	device_printf(((struct bgmac_softc*)ifp->if_softc)->dev, "change!\n");
-	return (0);
-}
-
-static void
-bgmac_stat(struct ifnet *ifp, struct ifmediareq *req)
-{
-	device_printf(((struct bgmac_softc*)ifp->if_softc)->dev, "stat!\n");
-	return;
-}
-#endif
-
-/**
- * Intr
- */
-
+/* Interrupt handler */
 static void
 bgmac_intr(void *arg)
 {
@@ -462,27 +485,21 @@ bgmac_intr(void *arg)
 	uint32_t		 intr_status;
 
 	sc = (struct bgmac_softc*)arg;
-	/**
-	 * Read status
-	 * Handle rx
-	 * Handle tr
-	 * Handle errors
-	 */
+
+	BGMAC_LOCK(sc);
 
 	intr_status = bus_read_4(sc->mem, BGMAC_REG_INTR_STATUS);
-	BHND_TRACE_DEV(sc->dev, "bgmac_intr: 0x%x\n", intr_status);
 	bus_write_4(sc->mem, BGMAC_REG_INTR_STATUS, intr_status);
 
+	BHND_TRACE_DEV(sc->dev, "bgmac_intr_status: 0x%x", intr_status);
+
 	/* disable interrupt for a while */
-	bus_write_4(sc->mem, BGMAC_REG_INTERRUPT_MASK, 0);
-	bus_read_4(sc->mem, BGMAC_REG_INTERRUPT_MASK);
+	bgmac_chip_set_intr_mask(sc, 0);
 
 	if (intr_status & BGMAC_REG_INTR_STATUS_TX) {
-		BHND_ERROR_DEV(sc->dev, "TX!");
-		BGMACDUMP(sc);
-		//kdb_enter("bgmac_error", "unimplemented TX");
+		BHND_TRACE_DEV(sc->dev, "TX!");
 		bcm_dma_tx(sc->dma->wme[0]);
-		intr_status &= ~BGMAC_REG_INTR_STATUS_RX;
+		intr_status &= ~BGMAC_REG_INTR_STATUS_TX;
 	}
 
 	if (intr_status & BGMAC_REG_INTR_STATUS_RX) {
@@ -506,75 +523,12 @@ bgmac_intr(void *arg)
 	}
 
 	/* enable interrupt */
-	bus_write_4(sc->mem, BGMAC_REG_INTERRUPT_MASK,
-	   BGMAC_REG_INTR_STATUS_RX | BGMAC_REG_INTR_STATUS_TX
-	   | BGMAC_REG_INTR_STATUS_ERR);
-	intr_status = bus_read_4(sc->mem, BGMAC_REG_INTERRUPT_MASK);
-	BHND_TRACE_DEV(sc->dev, "bgmac_intr: enable intr 0x%x\n", intr_status);
-
+	bgmac_chip_set_intr_mask(sc, I_ERR | I_RX | I_TX);
+	BGMAC_UNLOCK(sc);
 	return;
 }
 
-/**
- * TX path
- */
-
-
-/**
- * IOCTL
- */
-
-static int
-bgmac_ioctl(if_t ifp, u_long command, caddr_t data)
-{
-	struct bgmac_softc	*sc;
-	struct ifreq		*ifr;
-	//struct mii_data		*mii;
-	int			 error;
-
-	sc = if_getsoftc(ifp);
-	ifr = (struct ifreq *) data;
-	error = 0;
-
-	switch (command) {
-	case SIOCSIFFLAGS:
-		/* TODO: add locking */
-		//BFE_LOCK(sc);
-		if (ifp->if_flags & IFF_UP) {
-			if (ifp->if_drv_flags & IFF_DRV_RUNNING)
-				/* TODO: start rx */
-				//bfe_set_rx_mode(sc);
-				bgmac_set_rx_mode(sc);
-//			else if ((sc->bfe_flags & BFE_FLAG_DETACH) == 0)
-//				bfe_init_locked(sc);
-		} else if (ifp->if_drv_flags & IFF_DRV_RUNNING)
-			bgmac_stop(sc);
-//		BFE_UNLOCK(sc);
-		break;
-	case SIOCADDMULTI:
-	case SIOCDELMULTI:
-		/* XXX: implement SIOCDELMULTI */
-		error = 0;
-		break;
-	case SIOCGIFMEDIA:
-	case SIOCSIFMEDIA:
-		error = 0;
-//		error = ifmedia_ioctl(ifp, ifr, &sc->miibus, command);
-//		mii = device_get_softc(sc->bfe_miibus);
-//		error = ifmedia_ioctl(ifp, ifr, &mii->mii_media, command);
-		break;
-	default:
-		error = ether_ioctl(ifp, command, data);
-		break;
-	}
-
-	return (error);
-}
-
-/**
- * Get configuration from NVRAM
- *
- */
+/* Get configuration from NVRAM */
 static int
 bgmac_get_config(struct bgmac_softc *sc)
 {
@@ -614,31 +568,18 @@ bgmac_rxeof(struct device *dev, struct mbuf *m, struct bcm_rx_header *rxhdr)
 	/* TODO: early draft - need more attention */
 	sc = device_get_softc(dev);
 	ifp = sc->ifp;
+
+	BGMAC_ASSERT_LOCKED(sc);
+
 	m->m_pkthdr.rcvif = ifp;
+	BGMAC_UNLOCK(sc);
 	(*ifp->if_input)(ifp, m);
+	BGMAC_LOCK(sc);
 }
-
-static void
-bgmac_set_rx_mode(struct bgmac_softc * sc)
-{
-	bgmac_set_cmdcfg(sc, BGMAC_REG_CMD_CFG_RX | BGMAC_REG_CMD_CFG_TX |
-			BGMAC_REG_CMD_CFG_PROM);
-	return;
-}
-
-
-static void
-bgmac_stop(struct bgmac_softc * sc)
-{
-	bgmac_set_cmdcfg(sc, 0);
-	return;
-}
-
 
 /**
  * Driver metadata
  */
-
 static device_method_t bgmac_methods[] = {
 		DEVMETHOD(device_probe,	 	bgmac_probe),
 		DEVMETHOD(device_attach, 	bgmac_attach),
@@ -653,12 +594,11 @@ static device_method_t bgmac_methods[] = {
 		DEVMETHOD_END
 };
 
-devclass_t bhnd_bgmac_devclass;
+devclass_t bgmac_devclass;
 
-DEFINE_CLASS_0(bhnd_bgmac, bgmac_driver, bgmac_methods,
-		sizeof(struct bgmac_softc));
-DRIVER_MODULE(bhnd_bgmac, bhnd, bgmac_driver, bhnd_bgmac_devclass, 0, 0);
-//DRIVER_MODULE(miibus, bhnd_bgmac, miibus_driver, miibus_devclass, 0, 0);
-DRIVER_MODULE(mdio, bhnd_bgmac, mdio_driver, mdio_devclass, 0, 0);
+DEFINE_CLASS_0(bgmac, bgmac_driver, bgmac_methods, sizeof(struct bgmac_softc));
 
-MODULE_VERSION(bhnd_bgmac, 1);
+DRIVER_MODULE(bgmac, bhnd, bgmac_driver, bgmac_devclass, 0, 0);
+DRIVER_MODULE(mdio, bgmac, mdio_driver, mdio_devclass, 0, 0);
+
+MODULE_VERSION(bgmac, 1);

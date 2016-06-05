@@ -1,8 +1,30 @@
-/*
- * bcm_dma.h
+/*-
+ * Copyright (c) 2016 Michael Zhilin <mizhka@gmail.com>
+ * All rights reserved.
  *
- *  Created on: May 23, 2016
- *      Author: mizhka
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer,
+ *    without modification.
+ * 2. Redistributions in binary form must reproduce at minimum a disclaimer
+ *    similar to the "NO WARRANTY" disclaimer below ("Disclaimer") and any
+ *    redistribution must be conditioned upon including a substantially
+ *    similar Disclaimer requirement for further binary redistribution.
+ *
+ * NO WARRANTY
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+ * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+ * LIMITED TO, THE IMPLIED WARRANTIES OF NONINFRINGEMENT, MERCHANTIBILITY
+ * AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL
+ * THE COPYRIGHT HOLDERS OR CONTRIBUTORS BE LIABLE FOR SPECIAL, EXEMPLARY,
+ * OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER
+ * IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
+ * THE POSSIBILITY OF SUCH DAMAGES.
  */
 
 #ifndef SYS_DEV_BHND_CORES_BGMAC_BCM_DMA_H_
@@ -11,6 +33,8 @@
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/mbuf.h>
+
+#define BCM_DMA_RETRY_COUNT		10
 
 #define	BCM_DMA_30BIT			30
 #define	BCM_DMA_32BIT			32
@@ -36,11 +60,12 @@ struct bcm_dma {
 	uint64_t			lastseq;	/* XXX FIXME */
 };
 
-#define BCM_FRAME_OFFSET		0x04
+#define BCM_FRAME_OFFSET		0x06
 
 struct bcm_rx_header {
 	uint16_t len;
 	uint16_t flags;
+	uint16_t PAD; /* padding is required to avoid misalignment of TCP header */
 };
 
 struct bwn_plcp6 {
@@ -82,27 +107,25 @@ struct bcm_dma_ring;
 struct bcm_dmadesc_generic;
 struct bcm_dmadesc_meta;
 
-void		bcm_dma_rx(struct bcm_dma_ring *dr);
-
 int		bcm_dma_attach(device_t dev, struct resource *res,
 		    struct bcm_dma *dma);
+void		bcm_dma_detach(struct bcm_dma *dma);
+
+void		bcm_dma_tx(struct bcm_dma_ring *dr);
+void		bcm_dma_rx(struct bcm_dma_ring *dr);
+
+int		bcm_dma_tx_start(struct bcm_dma *dma, struct mbuf *m);
+void		bgmac_rxeof(struct device *dev, struct mbuf *m,
+		    struct bcm_rx_header *rxhdr);
+
 uint16_t	bcm_dma_base(int, int, int);
 int		bcm_dma_rx_newbuf(struct bcm_dma_ring *dr,
 		    struct bcm_dmadesc_generic *desc,
 		    struct bcm_dmadesc_meta *meta, int init);
-int		bcm_dma_rx_reset(struct bcm_dma_ring* ring,
-		    uint16_t base, int type);
 
 void		bcm_dmamap_callback(void *arg, bus_dma_segment_t *seg,
 		    int nseg, int error);
 void		bcm_dmamap_callback_mbuf(void *arg, bus_dma_segment_t *seg,
 		    int nseg, bus_size_t mapsz __unused, int error);
-
-void		bgmac_rxeof(struct device *dev, struct mbuf *m,
-		    struct bcm_rx_header *rxhdr);
-
-int		bcm_dma_tx_start(struct bcm_dma *dma, struct mbuf *m);
-void		bcm_dma_tx(struct bcm_dma_ring *dr);
-
 
 #endif /* SYS_DEV_BHND_CORES_BGMAC_BCM_DMA_H_ */

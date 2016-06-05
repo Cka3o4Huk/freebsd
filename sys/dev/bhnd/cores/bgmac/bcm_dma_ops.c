@@ -1,5 +1,6 @@
 /*-
  * Copyright (c) 2009-2010 Weongyo Jeong <weongyo@freebsd.org>
+ * Copyright (c) 2016 Michael Zhilin <mizhka@gmail.com>
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -54,16 +55,15 @@ __FBSDID("$FreeBSD$");
 void
 bcm_dma_suspend(struct bcm_dma_ring *dr)
 {
-	bus_write_4(dr->res, dr->dr_base + 0x00,
-			bus_read_4(dr->res, dr->dr_base + 0x00) | 0x00000002);
 
-//	BCM_DMA_WRITE(dr, BCM_DMA_CTL,
-//	    BCM_DMA_READ(dr, BCM_DMA_CTL) | BCM_DMA_CTL_SUSPEND);
+	BCM_DMA_WRITE(dr, BCM_DMA_CTL,
+	    BCM_DMA_READ(dr, BCM_DMA_CTL) | BCM_DMA_CTL_SUSPEND);
 }
 
 void
 bcm_dma_resume(struct bcm_dma_ring *dr)
 {
+
 	BCM_DMA_WRITE(dr, BCM_DMA_CTL,
 	    BCM_DMA_READ(dr, BCM_DMA_CTL) & ~BCM_DMA_CTL_SUSPEND);
 }
@@ -120,6 +120,7 @@ bcm_dma_32_setdesc(struct bcm_dma_ring *dr,
 void
 bcm_dma_32_start_transfer(struct bcm_dma_ring *dr, int slot)
 {
+
 	BCM_DMA_WRITE(dr, BCM_DMA32_INDEX,
 	    (uint32_t)(slot * sizeof(struct bcm_dmadesc32)));
 }
@@ -138,9 +139,14 @@ bcm_dma_32_get_curslot(struct bcm_dma_ring *dr)
 void
 bcm_dma_32_set_curslot(struct bcm_dma_ring *dr, int slot)
 {
+
 	BCM_DMA_WRITE(dr, BCM_DMA32_INDEX,
 	    (uint32_t) (slot * sizeof(struct bcm_dmadesc32)));
 }
+
+/**********************************************************************
+ * 	64-bit DMA operations
+ **********************************************************************/
 
 void
 bcm_dma_64_getdesc(struct bcm_dma_ring *dr, int slot,
@@ -148,34 +154,35 @@ bcm_dma_64_getdesc(struct bcm_dma_ring *dr, int slot,
 {
 	struct bcm_dmadesc64 *desc;
 
-	*meta = &(dr->dr_meta[slot]);
 	desc = dr->dr_ring_descbase;
 	desc = &(desc[slot]);
-
+	*meta = &(dr->dr_meta[slot]);
 	*gdesc = (struct bcm_dmadesc_generic *)desc;
 }
 
 void
-bcm_dma_64_setdesc(struct bcm_dma_ring *dr,
-    struct bcm_dmadesc_generic *desc, bus_addr_t dmaaddr, uint16_t bufsize,
-    int start, int end, int irq)
+bcm_dma_64_setdesc(struct bcm_dma_ring *dr, struct bcm_dmadesc_generic *desc,
+    bus_addr_t dmaaddr, uint16_t bufsize, int start, int end, int irq)
 {
-	struct bcm_dmadesc64 *descbase = dr->dr_ring_descbase;
-	int slot;
-	uint32_t ctl0 = 0, ctl1 = 0;
-	uint32_t addrlo, addrhi;
-	uint32_t addrext;
+	struct bcm_dmadesc64	*descbase;
+	int 			 slot;
+	uint32_t 		 ctl0, ctl1;
+	uint32_t		 addrlo, addrhi, addrext;
+
+	descbase = dr->dr_ring_descbase;
+	ctl0 = ctl1 = 0;
 
 	slot = (int)(&(desc->dma.dma64) - descbase);
 	KASSERT(slot >= 0 && slot < dr->dr_numslots,
-	    ("%s:%d: fail", __func__, __LINE__));
+	    ("%s:%d: fail on slot = %d", __func__, __LINE__, slot));
 
 	addrlo = (uint32_t) (dmaaddr & 0xffffffff);
 	addrhi = (((uint64_t) dmaaddr >> 32) & ~BCM_DMA_ADDR_MASK);
-	addrext = (((uint64_t) dmaaddr >> 32) & BCM_DMA_ADDR_MASK) >>
-	    30;
+	addrext = (((uint64_t) dmaaddr >> 32) & BCM_DMA_ADDR_MASK) >> 30;
+
 	/* XXX: why we need it? */
 	addrhi |= (0x40000000 << 1);
+
 	if (slot == dr->dr_numslots - 1)
 		ctl0 |= BCM_DMA64_DCTL0_DTABLEEND;
 	if (start)

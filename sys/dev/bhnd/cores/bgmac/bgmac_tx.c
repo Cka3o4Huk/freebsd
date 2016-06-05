@@ -1,15 +1,31 @@
-/*
- * bgmac_tx.c
+/*-
+ * Copyright (c) 2016 Michael Zhilin <mizhka@gmail.com>
+ * All rights reserved.
  *
- *  Created on: Jun 3, 2016
- *      Author: mizhka
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer,
+ *    without modification.
+ * 2. Redistributions in binary form must reproduce at minimum a disclaimer
+ *    similar to the "NO WARRANTY" disclaimer below ("Disclaimer") and any
+ *    redistribution must be conditioned upon including a substantially
+ *    similar Disclaimer requirement for further binary redistribution.
+ *
+ * NO WARRANTY
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+ * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+ * LIMITED TO, THE IMPLIED WARRANTIES OF NONINFRINGEMENT, MERCHANTIBILITY
+ * AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL
+ * THE COPYRIGHT HOLDERS OR CONTRIBUTORS BE LIABLE FOR SPECIAL, EXEMPLARY,
+ * OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER
+ * IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
+ * THE POSSIBILITY OF SUCH DAMAGES.
  */
-
-/*
- * TX flow
- */
-
-#define	BHND_LOGGING	BHND_TRACE_LEVEL
 
 #include <sys/cdefs.h>
 #include <sys/types.h>
@@ -41,32 +57,31 @@
 #include <machine/bus.h>
 #include <machine/resource.h>
 
-#include <dev/bhnd/bhnd_debug.h>
-
 #include "bgmac.h"
 #include "bgmacvar.h"
 #include "bgmacreg.h"
 
 #include "bcm_dma.h"
 
+#define	BHND_LOGGING	BHND_DEBUG_LEVEL
+#include <dev/bhnd/bhnd_debug.h>
+
 /* ***************************************************************
  * 	Internal prototypes
  * ***************************************************************
  */
 
-static int	bgmac_encap(struct bgmac_softc *sc, struct mbuf **m_head);
 static void	bgmac_start_locked(struct ifnet *ifp);
 
 void
-bgmac_start(struct ifnet *ifp)
+bgmac_if_start(struct ifnet *ifp)
 {
 	struct bgmac_softc *sc;
 
 	sc = if_getsoftc(ifp);
-//	BGMAC_LOCK(sc);
+	BGMAC_LOCK(sc);
 	bgmac_start_locked(ifp);
-/*	TODO: add locking */
-//	BGMAC_UNLOCK(sc);
+	BGMAC_UNLOCK(sc);
 }
 
 static void
@@ -74,41 +89,59 @@ bgmac_start_locked(struct ifnet *ifp)
 {
 	struct bgmac_softc	*sc;
 	struct mbuf		*m_head;
+	struct mbuf		*m0;
 	int			 count;
-//	uint32_t prodidx;
+	int			 err;
 
 	sc = if_getsoftc(ifp);
-	/* TODO: add locking */
-	//BGMAC_LOCK_ASSERT(sc);
+	BGMAC_ASSERT_LOCKED(sc);
 
 	if ((if_getdrvflags(ifp) & (IFF_DRV_RUNNING | IFF_DRV_OACTIVE)) !=
 	    IFF_DRV_RUNNING)
 		return;
-//
-////	prodidx = sc->bge_tx_prodidx;
-//
+
 	for (count = 0; !if_sendq_empty(ifp);) {
 		BHND_DEBUG_DEV(sc->dev, "TX queue has new data");
 
 		/* TODO: check if outgoing HW queue is full */
+//		if (sc->bge_txcnt > BGE_TX_RING_CNT - 16) {
+//			if_setdrvflagbits(ifp, IFF_DRV_OACTIVE, 0);
+//			break;
+//		}
 
 		m_head = if_dequeue(ifp);
 		if (m_head == NULL)
 			break;
-
-////		if (sc->bge_txcnt > BGE_TX_RING_CNT - 16) {
-////			if_setdrvflagbits(ifp, IFF_DRV_OACTIVE, 0);
-////			break;
-////		}
 
 		/*
 		 * Pack the data into the transmit ring. If we
 		 * don't have room, set the OACTIVE flag and wait
 		 * for the NIC to drain the ring.
 		 */
-		if (bgmac_encap(sc, &m_head)) {
-			if (m_head == NULL)
+
+		for (m0 = m_head; m0 != NULL; m0 = m0->m_next)
+			BHND_DEBUG_DEV(sc->dev, "TX[      ] mbuf[%d]",
+			    m0->m_len);
+
+		if (m_head->m_next != NULL) {
+			/* packet is split into set of small mbufs. merge them */
+			m0 = m_defrag(m_head, M_NOWAIT);
+			if (m0 == NULL) {
+				BHND_ERROR_DEV(sc->dev, "m_defrag failed");
+				if_sendq_prepend(ifp, m_head);
 				break;
+			}
+			/* m_defrag freed src mbuf chain, good by m_head */
+			m_head = m0;
+			for (m0 = m_head; m0 != NULL; m0 = m0->m_next)
+				BHND_DEBUG_DEV(sc->dev, "TX[defrag] mbuf[%d]",
+				    m0->m_len);
+		}
+
+		err = bcm_dma_tx_start(sc->dma, m_head);
+		if (err) {
+			BHND_ERROR_DEV(sc->dev, "bcm_dma_tx_start error: %d",
+					    err);
 			if_sendq_prepend(ifp, m_head);
 			if_setdrvflagbits(ifp, IFF_DRV_OACTIVE, 0);
 			break;
@@ -122,39 +155,4 @@ bgmac_start_locked(struct ifnet *ifp)
 		 */
 		if_bpfmtap(ifp, m_head);
 	}
-//
-//	if (count > 0) {
-//		bus_dmamap_sync(sc->bge_cdata.bge_tx_ring_tag,
-//		    sc->bge_cdata.bge_tx_ring_map, BUS_DMASYNC_PREWRITE);
-//		/* Transmit. */
-//		bge_writembx(sc, BGE_MBX_TX_HOST_PROD0_LO, prodidx);
-//		/* 5700 b2 errata */
-//		if (sc->bge_chiprev == BGE_CHIPREV_5700_BX)
-//			bge_writembx(sc, BGE_MBX_TX_HOST_PROD0_LO, prodidx);
-//
-//		sc->bge_tx_prodidx = prodidx;
-//
-//		/*
-//		 * Set a timeout in case the chip goes out to lunch.
-//		 */
-//		sc->bge_timer = BGE_TX_TIMEOUT;
-//	}
 }
-
-static int
-bgmac_encap(struct bgmac_softc *sc, struct mbuf **m_head)
-{
-	struct bcm_dma		*dma;
-	int			 err;
-
-	dma = sc->dma;
-	err = bcm_dma_tx_start(dma, *m_head);
-	if (err) {
-		BHND_ERROR_DEV(sc->dev, "bcm_dma_tx_start returns error: %d",
-		    err);
-		return (err);
-	}
-
-	return (-1);
-}
-
