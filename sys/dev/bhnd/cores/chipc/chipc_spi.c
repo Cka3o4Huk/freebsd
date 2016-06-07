@@ -205,7 +205,9 @@ chipc_spi_wait(struct chipc_spi_softc *sc)
 	if (i > 0)
 		return (0);
 
-	BHND_DEBUG_DEV(sc->dev, "busy");
+	BHND_WARN_DEV(sc->dev, "busy: CTL=0x%x DATA=0x%x",
+			SPI_READ(sc, CHIPC_SPI_FLASHCTL),
+			SPI_READ(sc, CHIPC_SPI_FLASHDATA));
 	return (-1);
 }
 
