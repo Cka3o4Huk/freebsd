@@ -204,7 +204,8 @@ chipc_slicer_walk(device_t dev, struct resource* res,
 		/* read last offset of TRX header */
 		fw_len = bus_read_4(res, result.fw_offset + 4);
 		fs_ofs = bus_read_4(res, result.fw_offset + 24);
-		BHND_TRACE_DEV(dev, "TRX filesystem offset: %x", fs_ofs);
+		BHND_TRACE_DEV(dev, "TRX filesystem: 0x%x-0x%x", fs_ofs,
+		   fw_len + result.fw_offset);
 
 		/*
 		 * GEOM IO will panic if offset is not aligned
@@ -226,7 +227,8 @@ chipc_slicer_walk(device_t dev, struct resource* res,
 			/* configuration slice */
 			slices[*nslices].size = CHIPC_SLICER_CFGSIZE;
 			slices[*nslices].base = result.fw_end -
-						    CHIPC_SLICER_CFGSIZE;
+						    slices[*nslices].size;
+			slices[*nslices].base = (slices[*nslices].base / 0x10000) * 0x10000;
 			slices[*nslices].label = "cfg";
 			*nslices += 1;
 		}
