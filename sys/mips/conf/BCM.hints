@@ -6,4 +6,4 @@ hint.bhnd_soc.0.msize="0x20000000"
 
 hint.bgmac.0.irq=4
 
-hint.b53switch.0.at="mdio0"
+hint.b53.0.at="mdio0"
