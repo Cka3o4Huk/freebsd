@@ -129,8 +129,12 @@ static void	bgmac_chip_set_intr_mask(struct bgmac_softc *sc,
 
 /* ifnet(9) interface */
 static void	bgmac_if_setup(device_t dev);
-static void	bgmac_if_init(void* sc);
+static void	bgmac_if_init(void* arg);
+static void	bgmac_if_init_locked(struct bgmac_softc *sc);
 static int	bgmac_if_ioctl(if_t ifp, u_long command, caddr_t data);
+static int	bgmac_if_mediachange(struct ifnet *ifp);
+static void	bgmac_if_mediastatus(struct ifnet *ifp, struct ifmediareq *ifmr);
+
 
 /****************************************************************************
  * Implementation
@@ -279,8 +283,10 @@ bgmac_chip_start_txrx(struct bgmac_softc * sc)
 {
 
 	BGMAC_ASSERT_LOCKED(sc);
+	BHND_INFO_DEV(sc->dev, "starting TX / RX");
 	bgmac_chip_set_cmdcfg(sc, BGMAC_REG_CMD_CFG_RX | BGMAC_REG_CMD_CFG_TX |
 			BGMAC_REG_CMD_CFG_PROM);
+	bgmac_chip_set_intr_mask(sc, I_ERR | I_RX | I_TX);
 	return;
 }
 
@@ -289,7 +295,9 @@ bgmac_chip_stop_txrx(struct bgmac_softc * sc)
 {
 
 	BGMAC_ASSERT_LOCKED(sc);
+	BHND_INFO_DEV(sc->dev, "stop TX / RX");
 	bgmac_chip_set_cmdcfg(sc, 0);
+	bgmac_chip_set_intr_mask(sc, I_ERR);
 	return;
 }
 
@@ -312,11 +320,51 @@ bgmac_if_setup(device_t dev)
 	if_setioctlfn(ifp, bgmac_if_ioctl);
 	if_setstartfn(ifp, bgmac_if_start);
 
+	ifmedia_init(&sc->ifmedia, 0, bgmac_if_mediachange, bgmac_if_mediastatus);
+	ifmedia_add(&sc->ifmedia, IFM_ETHER | IFM_100_T2 | IFM_FDX, 0, NULL);
+	ifmedia_set(&sc->ifmedia, IFM_ETHER | IFM_100_T2 | IFM_FDX);
+
 	ether_ifattach(ifp, sc->addr);
 	ifp->if_capabilities = ifp->if_capenable = IFCAP_RXCSUM | IFCAP_TXCSUM;
 
-	/* TODO: ifmedia_init / add / set */
+	//IFCAP_VLAN_MTU | IFCAP_VLAN_HWTAGGING | IFCAP_VLAN_HWCSUM;
+	//IFCAP_VLAN_HWFILTER | ;
+
 	return;
+}
+
+static int
+bgmac_if_mediachange(struct ifnet *ifp)
+{
+	struct bgmac_softc	*sc;
+	struct ifmedia		*ifm;
+	struct ifmedia_entry	*ife;
+
+	sc = ifp->if_softc;
+	ifm = &sc->ifmedia;
+	ife = ifm->ifm_cur;
+
+	if (IFM_TYPE(ifm->ifm_media) != IFM_ETHER)
+		return (EINVAL);
+
+	if (IFM_SUBTYPE(ife->ifm_media) == IFM_AUTO) {
+		device_printf(sc->dev, "AUTO is not supported for multiphy MAC");
+		return (EINVAL);
+	}
+
+	/*
+	 * Ignore everything
+	 */
+	return (0);
+}
+
+static void
+bgmac_if_mediastatus(struct ifnet *ifp, struct ifmediareq *ifmr)
+{
+
+	ifmr->ifm_status = IFM_AVALID | IFM_ACTIVE;
+	/* TODO: retrieve mode & duplex info from softc */
+	ifmr->ifm_active = IFM_ETHER | IFM_100_T2 | IFM_FDX;
 }
 
 static void
@@ -325,14 +373,25 @@ bgmac_if_init(void* arg)
 	struct bgmac_softc	*sc;
 
 	sc = (struct bgmac_softc*) arg;
+
+	BGMAC_LOCK(sc);
+	bgmac_if_init_locked(sc);
+	BGMAC_UNLOCK(sc);
+}
+
+static void
+bgmac_if_init_locked(struct bgmac_softc *sc)
+{
+
 	/* TODO: promiscios mode => ioctl */
+	BHND_INFO_DEV(sc->dev, "enable only promiscious");
 	bgmac_chip_set_cmdcfg(sc, BGMAC_REG_CMD_CFG_PROM);
 
 	/* set number of interrupts per frame */
 	bus_write_4(sc->mem, BGMAC_REG_INTR_RECV_LAZY,
 	    1 << BGMAC_REG_INTR_RECV_LAZY_FC_SHIFT);
 
-	bgmac_chip_set_intr_mask(sc, I_ERR | I_RX | I_TX);
+	bgmac_chip_set_intr_mask(sc, I_ERR);
 
 	sc->ifp->if_drv_flags |= IFF_DRV_RUNNING;
 	sc->ifp->if_drv_flags &= ~IFF_DRV_OACTIVE;
@@ -343,7 +402,6 @@ bgmac_if_ioctl(if_t ifp, u_long command, caddr_t data)
 {
 	struct bgmac_softc	*sc;
 	struct ifreq		*ifr;
-	//struct mii_data		*mii;
 	int			 error;
 
 	sc = if_getsoftc(ifp);
@@ -352,15 +410,16 @@ bgmac_if_ioctl(if_t ifp, u_long command, caddr_t data)
 
 	switch (command) {
 	case SIOCSIFFLAGS:
-		/* TODO: add locking */
 		BGMAC_LOCK(sc);
 		if (ifp->if_flags & IFF_UP) {
 			if (ifp->if_drv_flags & IFF_DRV_RUNNING)
-				/* TODO: start rx */
-				//bfe_set_rx_mode(sc);
 				bgmac_chip_start_txrx(sc);
-//			else if ((sc->bfe_flags & BFE_FLAG_DETACH) == 0)
-//				bfe_init_locked(sc);
+			else
+			{
+				/* TODO: add detach */
+				bgmac_if_init_locked(sc);
+				bgmac_chip_start_txrx(sc);
+			}
 		} else if (ifp->if_drv_flags & IFF_DRV_RUNNING)
 			bgmac_chip_stop_txrx(sc);
 		BGMAC_UNLOCK(sc);
@@ -372,10 +431,7 @@ bgmac_if_ioctl(if_t ifp, u_long command, caddr_t data)
 		break;
 	case SIOCGIFMEDIA:
 	case SIOCSIFMEDIA:
-		error = 0;
-//		error = ifmedia_ioctl(ifp, ifr, &sc->miibus, command);
-//		mii = device_get_softc(sc->bfe_miibus);
-//		error = ifmedia_ioctl(ifp, ifr, &mii->mii_media, command);
+		error = ifmedia_ioctl(ifp, ifr, &sc->ifmedia, command);
 		break;
 	default:
 		error = ether_ioctl(ifp, command, data);

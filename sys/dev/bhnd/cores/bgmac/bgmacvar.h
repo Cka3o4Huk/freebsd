@@ -33,6 +33,14 @@
 #include <sys/malloc.h>
 #include <sys/kernel.h>
 
+#include <sys/time.h>
+#include <sys/socket.h>
+
+#include <net/if.h>
+#include <net/if_var.h>
+#include <net/if_types.h>
+#include <net/if_media.h>
+
 #define BGMAC_TIMEOUT 1000
 #define BGMAC_MAX_RSPEC	3
 
@@ -49,6 +57,7 @@ struct bgmac_softc {
 	struct ifnet		*ifp;
 	u_char                   addr[6];
 	struct bcm_dma		*dma;
+	struct ifmedia		 ifmedia;
 //	bus_dma_tag_t		 parent_tag, ring_tag;
 //	bus_dmamap_t		 ring_map;
 //	bus_addr_t		 rxdesc_ring_busaddr;

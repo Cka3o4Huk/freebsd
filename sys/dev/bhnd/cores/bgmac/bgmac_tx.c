@@ -63,7 +63,7 @@
 
 #include "bcm_dma.h"
 
-#define	BHND_LOGGING	BHND_DEBUG_LEVEL
+#define	BHND_LOGGING	BHND_INFO_LEVEL
 #include <dev/bhnd/bhnd_debug.h>
 
 /* ***************************************************************
