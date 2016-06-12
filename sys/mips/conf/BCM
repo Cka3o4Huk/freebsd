@@ -89,6 +89,7 @@ device 		miibus			# attachments
 device		bgmac
 device		etherswitch
 device		bpf
+device		vlan
 
 #NVRAM
 device		nvram2env
