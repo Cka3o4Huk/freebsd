@@ -35,67 +35,67 @@
 #include "b53_reg.h"
 #include "b53_hal.h"
 
-static int	b5358hal_get_vlan_group(struct b53_softc *sc, int vlan_group,
+static int	b53115hal_get_vlan_group(struct b53_softc *sc, int vlan_group,
 		    int *vlan_id, int *members, int *untagged, int *forward_id);
-static int	b5358hal_set_vlan_group(struct b53_softc *sc, int vlan_group,
+static int	b53115hal_set_vlan_group(struct b53_softc *sc, int vlan_group,
 		    int vlan_id, int members, int untagged, int forward_id);
 
-struct b53_functions b5358_f = {
-	.vlan_get_vlan_group = b5358hal_get_vlan_group,
-	.vlan_set_vlan_group = b5358hal_set_vlan_group
+struct b53_functions b53115_f = {
+	.vlan_get_vlan_group = b53115hal_get_vlan_group,
+	.vlan_set_vlan_group = b53115hal_set_vlan_group
 };
 
-struct b53_hal b5358_hal = {
+struct b53_hal b53115_hal = {
 	.parent = &b5325_hal,
-	.own = &b5358_f
+	.own = &b53115_f
 };
 
 static int
-b5358hal_get_vlan_group(struct b53_softc *sc, int vlan_group,
+b53115hal_get_vlan_group(struct b53_softc *sc, int vlan_group,
 		    int *vlan_id, int *members, int *untagged, int *forward_id)
 {
 	uint32_t		 reg;
 	int			 error;
 
 	/* Set VLAN_GROUP as input */
-	reg = VLAN_TABLE_ACCESS_RW_ENABLE;
-	reg|= vlan_group & VLAN_TABLE_ACCESS_VID_MASK;
-	error = b53chip_write4(sc, VLAN_TABLE_ACCESS, reg);
+	error = b53chip_write4(sc, VLAN_TABLE_INDX_5395, vlan_group);
 	if (error) {
-		device_printf(sc->sc_dev, "can't write to VLAN_TABLE_ACCESS"
-		    "[%d]: %d\n", vlan_group, error);
+		device_printf(sc->sc_dev, "can't write to VLAN_TABLE_INDX_5395:"
+		    "%d\n", error);
 		return (error);
 	}
 
-	/* Read VLAN information */
-	error = b53chip_op(sc, VLAN_READ, &reg, 0);
+	/* Execute READ vlan information */
+	reg = VLAN_TABLE_ACCESS_5395_RUN | VLAN_TABLE_ACCESS_5395_READ;
+	error = b53chip_write4(sc, VLAN_TABLE_ACCESS_5395, reg);
 	if (error) {
-		device_printf(sc->sc_dev, "can't read from VLAN_READ[%d]: %d\n",
-		    vlan_group, error);
+		device_printf(sc->sc_dev, "can't write to VLAN_TABLE_ACCESS_5395 "
+		    "%d\n", error);
 		return (error);
 	}
 
-	/* Check if it valid */
-	if (!(reg & VLAN_RW_VALID_5358)) {
-		device_printf(sc->sc_dev, "not a valid VLAN[%d] info = 0x%x\n",
-		    vlan_group, reg);
-		return (ENOENT);
+	/* Read result */
+	error = b53chip_op(sc, VLAN_TABLE_ENTRY_5395, &reg, 0);
+	if (error){
+		device_printf(sc->sc_dev, "can't read to VLAN_TABLE_ENTRY_5395 "
+		"reg: %d\n", error);
+		return (error);
 	}
-
 #if 0
 	printf("reg[%d] = 0x%x\n",vlan_group, reg);
 #endif
-	*vlan_id = ETHERSWITCH_VID_VALID | vlan_group;
-	*members = B53_UNSHIFT(reg, VLAN_RW_MEMBER);
-	*untagged = B53_UNSHIFT(reg, VLAN_RW_UNTAGGED);
+
+	*vlan_id = ETHERSWITCH_VID_VALID | vlan_group; /* XXX: ??? */
+	*members = B53_UNSHIFT(reg, VLAN_RW_MEMBER_5395); /* TODO: shift MUST be 9 */
+	*untagged = B53_UNSHIFT(reg, VLAN_RW_UNTAGGED_5395);
 	/* TODO: forwarding */
-	*forward_id = 0;
+	*forward_id = 0; // RTL8366RB_VMCR_FID(vmcr);
 
 	return (0);
 }
 
 static int
-b5358hal_set_vlan_group(struct b53_softc *sc, int vlan_group,
+b53115hal_set_vlan_group(struct b53_softc *sc, int vlan_group,
 		    int vlan_id, int members, int untagged, int forward_id)
 {
 	uint32_t		 reg;
@@ -126,3 +126,4 @@ b5358hal_set_vlan_group(struct b53_softc *sc, int vlan_group,
 
 	return (0);
 }
+

@@ -177,6 +177,8 @@ bgmac_attach(device_t dev)
 	sc->mem = res[0];
 	sc->irq = res[1];
 
+	BGMACDUMP(sc);
+
 	error = bgmac_get_config(sc);
 	if (error) {
 		BHND_ERROR_DEV(dev, "can't get bgmac config from NVRAM: %d",
@@ -233,7 +235,12 @@ bgmac_chip_set_intr_mask(struct bgmac_softc *sc, enum bgmac_intr_status st)
 	uint32_t	mask;
 	uint32_t	feed;
 
-	mask = 0;
+	if (st & I_OR) {
+		mask = bus_read_4(sc->mem, BGMAC_REG_INTERRUPT_MASK);
+	} else {
+		mask = 0;
+	}
+
 	if (st & I_ERR)
 		mask |= BGMAC_REG_INTR_STATUS_ERR;
 	if (st & I_RX)
@@ -284,8 +291,7 @@ bgmac_chip_start_txrx(struct bgmac_softc * sc)
 
 	BGMAC_ASSERT_LOCKED(sc);
 	BHND_INFO_DEV(sc->dev, "starting TX / RX");
-	bgmac_chip_set_cmdcfg(sc, BGMAC_REG_CMD_CFG_RX | BGMAC_REG_CMD_CFG_TX |
-			BGMAC_REG_CMD_CFG_PROM);
+	bgmac_chip_set_cmdcfg(sc, BGMAC_REG_CMD_CFG_RX | BGMAC_REG_CMD_CFG_TX);
 	bgmac_chip_set_intr_mask(sc, I_ERR | I_RX | I_TX);
 	return;
 }
@@ -384,14 +390,12 @@ bgmac_if_init_locked(struct bgmac_softc *sc)
 {
 
 	/* TODO: promiscios mode => ioctl */
-	BHND_INFO_DEV(sc->dev, "enable only promiscious");
-	bgmac_chip_set_cmdcfg(sc, BGMAC_REG_CMD_CFG_PROM);
-
+	BHND_DEBUG_DEV(sc->dev, "init driver");
 	/* set number of interrupts per frame */
 	bus_write_4(sc->mem, BGMAC_REG_INTR_RECV_LAZY,
 	    1 << BGMAC_REG_INTR_RECV_LAZY_FC_SHIFT);
 
-	bgmac_chip_set_intr_mask(sc, I_ERR);
+	bgmac_chip_set_intr_mask(sc, I_ERR | I_OR);
 
 	sc->ifp->if_drv_flags |= IFF_DRV_RUNNING;
 	sc->ifp->if_drv_flags &= ~IFF_DRV_OACTIVE;

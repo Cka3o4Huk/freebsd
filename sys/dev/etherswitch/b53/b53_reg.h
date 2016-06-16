@@ -496,9 +496,14 @@ Page PRT, Address 34h-35h 	DPM Interrupt Register
 #define		VLAN_RW_MEMBER(_p)		(1 << (_p))
 #define		VLAN_RW_MEMBER_MASK		0x003f
 #define		VLAN_RW_MEMBER_SHIFT		0
+#define		VLAN_RW_MEMBER_5395_SHIFT	0
+#define		VLAN_RW_MEMBER_5395_MASK	0x1ff
 #define		VLAN_RW_UNTAGGED(_p)		(1 << ((_p) + 6))
 #define		VLAN_RW_UNTAGGED_MASK		0x0fc0
 #define		VLAN_RW_UNTAGGED_SHIFT		6
+#define		VLAN_RW_UNTAGGED_5395_SHIFT	9
+#define		VLAN_RW_UNTAGGED_5395_MASK	0x3fe00
+
 #define	VLAN_READ			(S4 | PAGE(0x34) | 0x0C)
 /* XXX: END Valid for BCM535x */
 #define	VLAN_DEFAULT_PORT_TAG(_p)	(S2 | PAGE(0x34) | (0x10 + ((_p) * 2)))

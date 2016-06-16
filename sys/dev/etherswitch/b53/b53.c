@@ -1,12 +1,13 @@
 /*-
  * Copyright (c) 2011 Aleksandr Rybalko.
+ * Copyright (c) 2016 Michael Zhilin <mizhka@gmail.com>
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
  * are met:
  * 1. Redistributions of source code must retain the above copyright
-  *    notice, this list of conditions and the following disclaimer.
+ *    notice, this list of conditions and the following disclaimer.
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
@@ -103,9 +104,6 @@ static int	b53switch_setport(device_t dev, etherswitch_port_t *p);
 
 static etherswitch_info_t*	b53switch_getinfo(device_t dev);
 
-/* HAL-specific functions */
-static void	b53hal_init(struct b53_softc *sc, struct b53_hal* inithal);
-
 /* Media callbacks */
 static int	b53ifmedia_upd(struct ifnet *ifp);
 static void	b53ifmedia_sts(struct ifnet *ifp, struct ifmediareq *ifmr);
@@ -130,7 +128,7 @@ b53_attach(device_t dev)
 	struct b53_softc	*sc;
 	int			 i, err;
 	char 			 name[IFNAMSIZ];
-	uint32_t		 switchid;
+	uint32_t		 reg;
 
 	sc = device_get_softc(dev);
 	sc->sc_dev = dev;
@@ -141,22 +139,73 @@ b53_attach(device_t dev)
 
 	mtx_init(&sc->sc_mtx, "b53", NULL, MTX_DEF);
 
+	if (bootverbose)
+		B53DUMP();
+
+#if 0
+	/*
+	 * XXX: Avoid default configuration, bootloader must set it or we
+	 * must load user defined
+	 */
 	if (b53chip_reset(dev))
 		device_printf(dev, "reset failed\n");
+#endif
 
-	switchid = b53chip_read4(sc, SWITCH_DEVICEID);
 
-	if(switchid == 0)
-		/* assume integrated BCM5325 */
-		switchid = 0x5325;
+	/* Initialize HAL by switch ID and chipcommon ID */
+	b53hal_init(sc);
 
-	device_printf(dev, "found switch BCM%x\n", switchid);
-
-	/* TODO: identify hal by switch ID and chipcommon ID */
-	b53hal_init(sc, &b5358_hal);
-
+#if 0
 	b53chip_write4(sc, PORT_CTL(PORTMII), PORTMII_CTL_BCAST_ENABLED |
 			PORTMII_CTL_MCAST_ENABLED | PORTMII_CTL_UCAST_ENABLED);
+#endif
+
+	/* MII port state override (page 0 register 14) */
+	err = b53chip_op(sc, PORTMII_STATUS_OVERRIDE, &reg, 0);
+
+	if (err) {
+		device_printf(dev, "Unable to set RvMII mode\n");
+		return (ENXIO);
+	}
+
+	/* Bit 4 enables reverse MII mode */
+	if (!(reg & PORTMII_STATUS_REVERSE_MII))
+	{
+		/* Enable RvMII */
+		reg |= PORTMII_STATUS_REVERSE_MII;
+		b53chip_write4(sc, PORTMII_STATUS_OVERRIDE, reg);
+		/* Read back */
+		err = b53chip_op(sc, PORTMII_STATUS_OVERRIDE, &reg, 0);
+		if (err || !(reg & PORTMII_STATUS_REVERSE_MII))
+		{
+			device_printf(dev, "Unable to set RvMII mode\n");
+			/* TODO: add detach */
+			return (ENXIO);
+		}
+	}
+
+#if 0
+	if ((reg & PORTMII_STATUS_PAUSE_CAPABLE))
+	{
+		/* Disable pause */
+		reg &= ~((uint32_t)PORTMII_STATUS_PAUSE_CAPABLE);
+		b53chip_write4(sc, PORTMII_STATUS_OVERRIDE, reg);
+		/* Read back */
+		err = b53chip_op(sc, PORTMII_STATUS_OVERRIDE, &reg, 0);
+		if (err || !(reg & PORTMII_STATUS_REVERSE_MII))
+		{
+			device_printf(dev, "Unable to resume chip\n");
+			/* TODO: add detach */
+			return (ENXIO);
+		}
+	}
+#endif
+
+	/*
+	 * XXX: We need prefetch existing sc->base_vlan here.
+	 * XXX: Avoid default configuration, bootloader must set it or we
+	 * must load user defined
+	 */
 
 	if (bootverbose)
 		B53DUMP();
@@ -247,32 +296,9 @@ b53mii_pollstat(struct b53_softc *sc)
 		mii_pollstat(device_get_softc(sc->miibus[i]));
 }
 
-static void
-b53hal_init(struct b53_softc *sc, struct b53_hal* inithal)
-{
-	struct b53_functions	*scfunc;
-	struct b53_functions	*initfunc;
-
-	scfunc = &sc->hal;
-	for (;;) {
-		initfunc = inithal->own;
-
-		/* inherit functions from initial HAL */
-		for (int i = 0; i < B53HALSIZE; i++)
-			if (scfunc->func[i] == NULL)
-				scfunc->func[i] = initfunc->func[i];
-
-		if (inithal->parent == NULL)
-			break;
-
-		/* has parent, next cycle */
-		inithal = inithal->parent;
-	}
-}
-
 /*************** SWITCH register access via PSEUDO PHY over MII ************/
 int
-b53chip_op(struct b53_softc *sc, uint32_t reg, uint32_t *res, int is_wr)
+b53chip_op(struct b53_softc *sc, uint32_t reg, uint32_t *res, int is_write)
 {
 	uint64_t 	val;
 	uint8_t		len, page;
@@ -282,7 +308,7 @@ b53chip_op(struct b53_softc *sc, uint32_t reg, uint32_t *res, int is_wr)
 	if (res == NULL)
 		return (EINVAL);
 
-	val  = (is_wr) ? *res : 0;
+	val  = (is_write) ? *res : 0;
 	len  = (B53_UNSHIFT(reg, B53_LEN) + 1) / 2; /* in halfword */
 	page =  B53_UNSHIFT(reg, B53_PAGE);
 	reg  =  B53_UNSHIFT(reg, B53_REG);
@@ -291,7 +317,7 @@ b53chip_op(struct b53_softc *sc, uint32_t reg, uint32_t *res, int is_wr)
 	tmp = B53_SHIFT(page, ACCESS_CONTROL_PAGE) | ACCESS_CONTROL_RW;
 	B53_WRITEREG(B53_ACCESS_CONTROL_REG, tmp);
 
-	if (is_wr)
+	if (is_write)
 		for (i = 0; i < len; i++) {
 			data_reg = B53_DATA_REG_BASE + i;
 			data_val = (uint16_t)((val >> (16*i)) & 0xffff);
@@ -299,7 +325,7 @@ b53chip_op(struct b53_softc *sc, uint32_t reg, uint32_t *res, int is_wr)
 		}
 
 	tmp = B53_SHIFT(reg, RW_CONTROL_ADDR);
-	tmp|= (is_wr) ? RW_CONTROL_WRITE : RW_CONTROL_READ;
+	tmp|= (is_write) ? RW_CONTROL_WRITE : RW_CONTROL_READ;
 	B53_WRITEREG(B53_RW_CONTROL_REG, tmp);
 
 	/* is operation finished? */
@@ -316,7 +342,7 @@ b53chip_op(struct b53_softc *sc, uint32_t reg, uint32_t *res, int is_wr)
 	}
 
 	/* get result */
-	if (is_wr == 0) {
+	if (is_write == 0) {
 		for (i = 0; i < len; i++)
 			val |= (B53_READREG(B53_DATA_REG_BASE + i)) << (16*i);
 		*res = val & UINT32_MAX;

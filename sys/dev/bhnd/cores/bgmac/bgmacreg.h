@@ -48,7 +48,8 @@ enum bgmac_intr_status
 {
 	I_ERR = 1,
 	I_RX = 2,
-	I_TX = 4
+	I_TX = 4,
+	I_OR = 8
 };
 
 #define	BGMAC_REG_INTERRUPT_MASK		0x024  //0
