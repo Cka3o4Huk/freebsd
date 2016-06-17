@@ -317,6 +317,7 @@ bcm_dma_ring_load(struct bcm_dma_ring *dr)
 			    BCM_DMA_SHIFT(dr->dr_frameoffset, BCM_DMA_CTL_RXFROFF);
 		value |= BCM_DMA_CTL_ENABLE;
 		value |= BCM_DMA_CTL_PARITYDISABLE;
+		value |= BCM_DMA_CTL_OVERFLOWCONTINUE;
 		value |= BCM_DMA_SHIFT(addrext, BCM_DMA_CTL_ADDREXT);
 		BHND_DEBUG_DEV(dev, "CTL: 0x%x->0x%x", dr->dr_base + BCM_DMA_CTL,
 		    value);
