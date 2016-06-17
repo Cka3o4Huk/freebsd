@@ -51,13 +51,14 @@ MALLOC_DECLARE(M_BCMSWITCH);
 struct b53_softc;
 struct b53_hal;
 
-#define	B53HALSIZE		4
+#define	B53HALSIZE		5
 
 typedef void (*voidfunctype) (void);
 
 struct b53_functions {
 	union{
 		struct {
+			int (* reset) (struct b53_softc *sc);
 			/* VLAN functions */
 			int (* vlan_get_pvid) (struct b53_softc *sc, int port,
 			    int *pvid);

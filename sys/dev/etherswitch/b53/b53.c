@@ -128,7 +128,9 @@ b53_attach(device_t dev)
 	struct b53_softc	*sc;
 	int			 i, err;
 	char 			 name[IFNAMSIZ];
+#if 0
 	uint32_t		 reg;
+#endif
 
 	sc = device_get_softc(dev);
 	sc->sc_dev = dev;
@@ -160,28 +162,9 @@ b53_attach(device_t dev)
 			PORTMII_CTL_MCAST_ENABLED | PORTMII_CTL_UCAST_ENABLED);
 #endif
 
-	/* MII port state override (page 0 register 14) */
-	err = b53chip_op(sc, PORTMII_STATUS_OVERRIDE, &reg, 0);
-
-	if (err) {
-		device_printf(dev, "Unable to set RvMII mode\n");
-		return (ENXIO);
-	}
-
-	/* Bit 4 enables reverse MII mode */
-	if (!(reg & PORTMII_STATUS_REVERSE_MII))
-	{
-		/* Enable RvMII */
-		reg |= PORTMII_STATUS_REVERSE_MII;
-		b53chip_write4(sc, PORTMII_STATUS_OVERRIDE, reg);
-		/* Read back */
-		err = b53chip_op(sc, PORTMII_STATUS_OVERRIDE, &reg, 0);
-		if (err || !(reg & PORTMII_STATUS_REVERSE_MII))
-		{
-			device_printf(dev, "Unable to set RvMII mode\n");
-			/* TODO: add detach */
-			return (ENXIO);
-		}
+	if (sc->hal.reset != NULL) {
+		sc->hal.reset(sc);
+		/* TODO: if (err) add detach */
 	}
 
 #if 0
@@ -510,6 +493,9 @@ b53switch_getvgroup(device_t dev, etherswitch_vlangroup_t *vg)
 
 	sc = device_get_softc(dev);
 
+	if (sc->hal.vlan_get_vlan_group == NULL)
+		return (ENXIO);
+
 	err = sc->hal.vlan_get_vlan_group(sc, vg->es_vlangroup,
 			&vg->es_vid,
 			&vg->es_member_ports,
@@ -526,6 +512,9 @@ b53switch_setvgroup(device_t dev, etherswitch_vlangroup_t *vg)
 	int			 err;
 
 	sc = device_get_softc(dev);
+
+	if (sc->hal.vlan_set_vlan_group == NULL)
+		return (ENXIO);
 
 	err = sc->hal.vlan_set_vlan_group(sc, vg->es_vlangroup,
 			vg->es_vid,

@@ -39,8 +39,10 @@ static int	b53115hal_get_vlan_group(struct b53_softc *sc, int vlan_group,
 		    int *vlan_id, int *members, int *untagged, int *forward_id);
 static int	b53115hal_set_vlan_group(struct b53_softc *sc, int vlan_group,
 		    int vlan_id, int members, int untagged, int forward_id);
+static int 	b53115hal_reset(struct b53_softc *sc);
 
 struct b53_functions b53115_f = {
+	.reset = b53115hal_reset,
 	.vlan_get_vlan_group = b53115hal_get_vlan_group,
 	.vlan_set_vlan_group = b53115hal_set_vlan_group
 };
@@ -49,6 +51,26 @@ struct b53_hal b53115_hal = {
 	.parent = &b5325_hal,
 	.own = &b53115_f
 };
+
+static int
+b53115hal_reset(struct b53_softc *sc)
+{
+	int		err;
+	uint32_t	reg;
+
+	/* MII port state override (page 0 register 14) */
+	err = b53chip_op(sc, PORTMII_STATUS_OVERRIDE, &reg, 0);
+
+	if (err) {
+		device_printf(sc->sc_dev, "Unable to set RvMII mode\n");
+		return (ENXIO);
+	}
+
+	b53chip_write4(sc, PORTMII_STATUS_OVERRIDE, reg |
+	    PORTMII_STATUS_FORCE_1000M | PORTMII_STATUS_FORCE_LINK );
+
+	return (0);
+}
 
 static int
 b53115hal_get_vlan_group(struct b53_softc *sc, int vlan_group,

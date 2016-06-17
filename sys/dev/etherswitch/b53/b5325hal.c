@@ -45,8 +45,10 @@ __FBSDID("$FreeBSD$");
 
 static int	b5325hal_get_port_pvid(struct b53_softc *sc, int port, int *pvid);
 static int	b5325hal_set_port_pvid(struct b53_softc *sc, int port, int pvid);
+static int	b5325hal_reset(struct b53_softc *sc);
 
 struct b53_functions b5325_f = {
+	.reset = b5325hal_reset,
 	.vlan_get_pvid = b5325hal_get_port_pvid,
 	.vlan_set_pvid = b5325hal_set_port_pvid
 	/* TODO: add VLAN getter/setter */
@@ -56,6 +58,38 @@ struct b53_hal	b5325_hal = {
 	.parent = NULL,
 	.own = &b5325_f
 };
+
+static int
+b5325hal_reset(struct b53_softc *sc)
+{
+	int		err;
+	uint32_t	reg;
+
+	/* MII port state override (page 0 register 14) */
+	err = b53chip_op(sc, PORTMII_STATUS_OVERRIDE, &reg, 0);
+
+	if (err) {
+		device_printf(sc->sc_dev, "Unable to set RvMII mode\n");
+		return (ENXIO);
+	}
+
+	/* Bit 4 enables reverse MII mode */
+	if (!(reg & PORTMII_STATUS_REVERSE_MII))
+	{
+		/* Enable RvMII */
+		reg |= PORTMII_STATUS_REVERSE_MII;
+		b53chip_write4(sc, PORTMII_STATUS_OVERRIDE, reg);
+		/* Read back */
+		err = b53chip_op(sc, PORTMII_STATUS_OVERRIDE, &reg, 0);
+		if (err || !(reg & PORTMII_STATUS_REVERSE_MII))
+		{
+			device_printf(sc->sc_dev, "Unable to set RvMII mode\n");
+			return (ENXIO);
+		}
+	}
+
+	return (0);
+}
 
 static int
 b5325hal_get_port_pvid(struct b53_softc *sc, int port, int *pvid)
