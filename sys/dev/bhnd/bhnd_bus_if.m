@@ -49,12 +49,6 @@ CODE {
 
 	#include <dev/bhnd/bhndvar.h>
 	
-	static struct bhnd_chipid *
-	bhnd_bus_null_get_chipid(device_t dev, device_t child)
-	{
-		panic("bhnd_bus_get_chipid unimplemented");
-	}
-
 	static int
 	bhnd_bus_null_read_board_info(device_t dev, device_t child,
 	    struct bhnd_board_info *info)
@@ -181,7 +175,7 @@ METHOD int get_probe_order {
 METHOD const struct bhnd_chipid * get_chipid {
 	device_t dev;
 	device_t child;
-} DEFAULT bhnd_bus_null_get_chipid;
+} DEFAULT bhnd_bus_generic_get_chipid;
 
 /**
  * Return the BHND attachment type of the parent bus.
