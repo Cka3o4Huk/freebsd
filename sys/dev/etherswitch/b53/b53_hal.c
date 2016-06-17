@@ -55,6 +55,7 @@ struct b53hal_mapping {
 static struct b53hal_mapping integrated_ids[] = {
 	{0x5358, &b5358_hal},
 	{0x5357, &b5358_hal},
+	{53572, &b5358_hal},
 	{0, NULL}
 };
 
