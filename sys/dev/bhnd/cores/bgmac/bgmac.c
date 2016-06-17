@@ -77,7 +77,7 @@
 #include <machine/bus.h>
 #include <machine/resource.h>
 
-#define	BHND_LOGGING	BHND_INFO_LEVEL
+#define	BHND_LOGGING	BHND_TRACE_LEVEL
 #include <dev/bhnd/bhnd.h>
 #include <dev/bhnd/bhnd_ids.h>
 
@@ -596,8 +596,10 @@ bgmac_get_config(struct bgmac_softc *sc)
 	char	 macaddr[18];
 
 	tmp = kern_getenv("sb/1/macaddr");
+	/* FIXME: RT-N12 - why missing? */
 	if (tmp == NULL)
-		return (-1);
+		tmp = "AC:9E:17:BA:FC:D8";
+		//return (-1);
 
 	if (strlen(tmp) != strlen("00:00:00:00:00:00"))
 		return (-2);
