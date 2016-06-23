@@ -93,20 +93,20 @@
 #endif /* !(defined(BHND_LOGLEVEL)) */
 #endif /* !(defined(BHND_LOGGING)) */
 
-#if BHND_LOGGING > BHND_INFO_LEVEL
+#if BHND_LOGGING > BHND_INFO_LEVEL || BHND_LOGGING == BHND_ERROR_LEVEL
 #define	_BHND_PRINT(fn, level, fmt, ...)				\
 	do {								\
 		if (level##LEVEL < BHND_DEBUG_LEVEL || bootverbose)	\
 		    fn "[BHND " level##MSG "] %s:%d => " fmt "\n",	\
 			__func__, __LINE__, ## __VA_ARGS__);		\
 	} while(0);
-#else /* BHND_LOGGING <= BHND_INFO_LEVEL */
+#else /* BHND_LOGGING <= BHND_INFO_LEVEL && BHND_LOGGING != BHND_ERROR_LEVEL */
 #define	_BHND_PRINT(fn, level, fmt, ...)				\
 	do {								\
 		if (level##LEVEL < BHND_DEBUG_LEVEL || bootverbose)	\
 		    fn "bhnd: " fmt "\n", ## __VA_ARGS__);		\
 	} while(0);
-#endif /* BHND_LOGGING > BHND_INFO_LEVEL */
+#endif /* BHND_LOGGING > BHND_INFO_LEVEL || BHND_LOGGING == BHND_ERROR_LEVEL */
 
 
 #define	_BHND_RAWPRINTFN	printf(
