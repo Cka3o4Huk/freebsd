@@ -244,7 +244,9 @@ bcma_reset_core(device_t dev, device_t child, uint16_t flags)
 static int
 bcma_suspend_core(device_t dev, device_t child)
 {
-	struct bcma_devinfo *dinfo;
+	struct bcma_devinfo	*dinfo;
+	uint32_t		 tmp;
+	int			 tries;
 
 	if (device_get_parent(child) != dev)
 		BHND_BUS_SUSPEND_CORE(device_get_parent(dev), child);
@@ -255,7 +257,46 @@ bcma_suspend_core(device_t dev, device_t child)
 	if (dinfo->res_agent == NULL)
 		return (ENODEV);
 
-	// TODO - perform suspend
+	/*
+	 * To ensure there are no pending operations prior to putting the core
+	 * in reset, we should spin here for 300ms (in 10us intervals)
+	 * waiting for resetstatus to clear.
+	 */
+	tries = BCMA_NUM_OF_RETRIES;
+	for(;;) {
+		tmp = bhnd_bus_read_4(dinfo->res_agent, BCMA_DMP_RESETSTATUS);
+		if (tmp == 0)
+			break;
+		if (--tries == 0)
+			return (ENXIO);
+		DELAY(10);
+	}
+
+	/* Start reset */
+	bhnd_bus_write_4(dinfo->res_agent, BCMA_DMP_RESETCTRL, BCMA_DMP_RC_RESET);
+	DELAY(10);
+
+	/*
+	 * After this 10us delay, we should spin waiting for resetstatus to
+	 * clear
+	 */
+	tries = BCMA_NUM_OF_RETRIES;
+	for(;;) {
+		tmp = bhnd_bus_read_4(dinfo->res_agent, BCMA_DMP_RESETSTATUS);
+		if (tmp == 0)
+			break;
+		if (--tries == 0)
+			return (ENXIO);
+		DELAY(10);
+	}
+
+	tmp = bhnd_bus_read_4(dinfo->res_agent, BCMA_DMP_IOCTRL);
+	tmp &= ~BHND_CF_CLOCK_EN;
+	tmp &= ~BHND_CF_FGC;
+
+	/* Disable clocking */
+	bhnd_bus_write_4(dinfo->res_agent, BCMA_DMP_IOCTRL, tmp);
+	DELAY(10);
 
 	return (ENXIO);
 }
