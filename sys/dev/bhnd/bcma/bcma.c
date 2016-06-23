@@ -158,7 +158,9 @@ bcma_get_resource_list(device_t dev, device_t child)
 static int
 bcma_reset_core(device_t dev, device_t child, uint16_t flags)
 {
-	struct bcma_devinfo *dinfo;
+	struct bcma_devinfo	*dinfo;
+	uint32_t		 tmp;
+	int			 tries;
 
 	if (device_get_parent(child) != dev)
 		BHND_BUS_RESET_CORE(device_get_parent(dev), child, flags);
@@ -169,30 +171,71 @@ bcma_reset_core(device_t dev, device_t child, uint16_t flags)
 	if (dinfo->res_agent == NULL)
 		return (ENODEV);
 
+	/*
+	 * To ensure there are no pending operations prior to putting the core
+	 * in reset, we should spin here for 300ms (in 10us intervals)
+	 * waiting for resetstatus to clear.
+	 */
+	tries = BCMA_NUM_OF_RETRIES;
+	for(;;) {
+		tmp = bhnd_bus_read_4(dinfo->res_agent, BCMA_DMP_RESETSTATUS);
+		if (tmp == 0)
+			break;
+		if (--tries == 0)
+			return (ENXIO);
+		DELAY(10);
+	}
+
 	/* Start reset */
-	bhnd_bus_write_4(dinfo->res_agent, BHND_RESET_CF, BHND_RESET_CF_ENABLE);
-	bhnd_bus_read_4(dinfo->res_agent, BHND_RESET_CF);
+	bhnd_bus_write_4(dinfo->res_agent, BCMA_DMP_RESETCTRL, BCMA_DMP_RC_RESET);
 	DELAY(10);
 
-	/* Disable clock */
-	bhnd_bus_write_4(dinfo->res_agent, BHND_CF, flags);
-	bhnd_bus_read_4(dinfo->res_agent, BHND_CF);
-	DELAY(10);
+	/*
+	 * After this 10us delay, we should spin waiting for resetstatus to
+	 * clear
+	 */
+	tries = BCMA_NUM_OF_RETRIES;
+	for(;;) {
+		tmp = bhnd_bus_read_4(dinfo->res_agent, BCMA_DMP_RESETSTATUS);
+		if (tmp == 0)
+			break;
+		if (--tries == 0)
+			return (ENXIO);
+		DELAY(10);
+	}
 
 	/* Enable clocks & force clock gating */
-	bhnd_bus_write_4(dinfo->res_agent, BHND_CF, BHND_CF_CLOCK_EN |
+	bhnd_bus_write_4(dinfo->res_agent, BCMA_DMP_IOCTRL, BHND_CF_CLOCK_EN |
 	    BHND_CF_FGC | flags);
-	bhnd_bus_read_4(dinfo->res_agent, BHND_CF);
+	bhnd_bus_read_4(dinfo->res_agent, BCMA_DMP_IOCTRL);
 	DELAY(10);
 
 	/* Complete reset */
-	bhnd_bus_write_4(dinfo->res_agent, BHND_RESET_CF, 0);
-	bhnd_bus_read_4(dinfo->res_agent, BHND_RESET_CF);
-	DELAY(10);
+	bhnd_bus_write_4(dinfo->res_agent, BCMA_DMP_RESETCTRL, 0);
+	tries = BCMA_NUM_OF_RETRIES;
+	for(;;) {
+		tmp = bhnd_bus_read_4(dinfo->res_agent, BCMA_DMP_RESETCTRL);
+		if (tmp == 0)
+			break;
+		if (--tries == 0)
+			return (ENXIO);
+		DELAY(10);
+	}
 
-	/* Release force clock gating */
-	bhnd_bus_write_4(dinfo->res_agent, BHND_CF, BHND_CF_CLOCK_EN | flags);
-	bhnd_bus_read_4(dinfo->res_agent, BHND_CF);
+	tries = BCMA_NUM_OF_RETRIES;
+	for(;;) {
+		tmp = bhnd_bus_read_4(dinfo->res_agent, BCMA_DMP_RESETSTATUS);
+		if (tmp == 0)
+			break;
+		if (--tries == 0)
+			return (ENXIO);
+		DELAY(10);
+	}
+
+	/* Disable clock gating */
+	bhnd_bus_write_4(dinfo->res_agent, BCMA_DMP_IOCTRL, BHND_CF_CLOCK_EN |
+	    flags);
+	bhnd_bus_read_4(dinfo->res_agent, BCMA_DMP_IOCTRL);
 	DELAY(10);
 
 	return (0);

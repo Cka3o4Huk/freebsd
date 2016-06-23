@@ -56,6 +56,8 @@
 #define	BCMA_DINFO_COREIDX(_dinfo)	\
 	((_dinfo)->corecfg->core_info.core_idx)
 
+/* Timeout for reset / suspend operations */
+#define BCMA_NUM_OF_RETRIES	30
 
 /** BCMA port identifier. */
 typedef u_int		bcma_pid_t;
