@@ -56,6 +56,7 @@ __FBSDID("$FreeBSD$");
 #include <dev/ofw/ofw_bus.h>
 #include <dev/ofw/ofw_bus_subr.h>
 #include <dev/ofw/ofw_pci.h>
+#include <dev/ofw/ofw_subr.h>
 #include <dev/ofw/ofwpci.h>
 #include <dev/pci/pcivar.h>
 #include <dev/pci/pcireg.h>
@@ -905,8 +906,8 @@ static struct tegra_pcib_port *
 tegra_pcib_parse_port(struct tegra_pcib_softc *sc, phandle_t node)
 {
 	struct tegra_pcib_port *port;
-	uint32_t tmp[5];
 	char tmpstr[6];
+	pcell_t pci_hi;
 	int rv;
 
 	port = malloc(sizeof(struct tegra_pcib_port), M_DEVBUF, M_WAITOK);
@@ -918,31 +919,18 @@ tegra_pcib_parse_port(struct tegra_pcib_softc *sc, phandle_t node)
 	else
 		port->enabled = 0;
 
-	rv = OF_getencprop(node, "assigned-addresses", tmp, sizeof(tmp));
-	if (rv != sizeof(tmp)) {
-		device_printf(sc->dev, "Cannot parse assigned-address: %d\n",
-		    rv);
+	rv = ofw_reg_to_paddr(node, 0, &port->rp_base_addr, &port->rp_size,
+	   &pci_hi);
+	if (rv != 0) {
+		device_printf(sc->dev, "Cannot parse reg: %d\n",  rv);
 		goto fail;
 	}
-	port->rp_base_addr = tmp[2];
-	port->rp_size = tmp[4];
-	port->port_idx = OFW_PCI_PHYS_HI_DEVICE(tmp[0]) - 1;
+	port->port_idx = OFW_PCI_PHYS_HI_DEVICE(pci_hi) - 1;
 	if (port->port_idx >= TEGRA_PCIB_MAX_PORTS) {
 		device_printf(sc->dev, "Invalid port index: %d\n",
 		    port->port_idx);
 		goto fail;
 	}
-	/* XXX - TODO:
-	 * Implement proper function for parsing pci "reg" property:
-	 *  - it have PCI bus format
-	 *  - its relative to matching "assigned-addresses"
-	 */
-	rv = OF_getencprop(node, "reg", tmp, sizeof(tmp));
-	if (rv != sizeof(tmp)) {
-		device_printf(sc->dev, "Cannot parse reg: %d\n", rv);
-		goto fail;
-	}
-	port->rp_base_addr += tmp[2];
 
 	rv = OF_getencprop(node, "nvidia,num-lanes", &port->num_lanes,
 	    sizeof(port->num_lanes));
