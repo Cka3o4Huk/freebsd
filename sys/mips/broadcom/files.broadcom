@@ -34,3 +34,12 @@ dev/bhnd/cores/bgmac/bcm_dma_ring.c	optional bgmac
 dev/bhnd/cores/bgmac/bcm_dma_rx.c	optional bgmac
 dev/bhnd/cores/bgmac/bcm_dma_tx.c	optional bgmac
 
+dev/etherswitch/b53/b53.c		optional bgmac etherswitch
+dev/etherswitch/b53/b5325hal.c		optional bgmac etherswitch
+#dev/etherswitch/b53/b5350hal.c		optional bgmac etherswitch
+dev/etherswitch/b53/b5358hal.c		optional bgmac etherswitch
+dev/etherswitch/b53/b53115hal.c		optional bgmac etherswitch
+#dev/etherswitch/b53/b5395hal.c		optional bgmac etherswitch
+dev/etherswitch/b53/b53_ddb.c		optional bgmac etherswitch
+dev/etherswitch/b53/b53_hal.c		optional bgmac etherswitch
+
