@@ -19,12 +19,15 @@ options 	ALT_BREAK_TO_DEBUGGER
 options 	BREAK_TO_DEBUGGER
 options		BOOTVERBOSE=0
 
-makeoptions	TRAMPLOADADDR=0x80800000
+makeoptions	TRAMPLOADADDR=0x80900000
 makeoptions	DEBUG="-g3"		#Build kernel with gdb(1) debug symbols
 makeoptions	MODULES_OVERRIDE=""
 
 options 	DDB
 options 	KDB
+options		KTR
+options		KTR_ENTRIES=8192
+options		KTR_MASK=(0)
 
 options 	SCHED_4BSD		#4BSD scheduler
 options 	INET			#InterNETworking
@@ -65,10 +68,7 @@ device		bcma_nexus
 device		pci
 device		bhnd_pcib		# PCIe-G1 core
 
-#device		bgmac			# Broadcom GMAC - not yet
-
 device		gpio
-device		mdio
 
 #Flash
 device		spibus
@@ -93,6 +93,14 @@ device		md
 #Ethernet
 # device 	bfe			# XXX will build both pci and siba
 device 		miibus			# attachments
+device		bgmac
+device		mdio
+device		bpf
+device		etherswitch
+device		vlan
+
+#NVRAM
+device		nvram2env
 
 # pci devices
 
