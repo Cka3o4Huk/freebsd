@@ -63,7 +63,7 @@ chipc_otp_identify(driver_t *driver, device_t parent)
 	if (device_find_child(parent, "nvram2env", -1) != NULL)
 		return;
 
-	caps = BHND_CHIPC_GET_CAPS(parent);
+	caps = BHND_CHIPC_GET_CAPS(device_get_parent(parent));
 	if (caps == NULL) {
 		device_printf(parent, "no BHND_CHIPC_GET_CAPS found\n");
 		return;
