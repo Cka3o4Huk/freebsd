@@ -272,6 +272,9 @@ cfi_probe(device_t dev)
 		}
 	}
 
+	if (bootverbose)
+		device_printf(dev, "width chip/bus: %d/%d\n",sc->sc_width, sc->sc_buswidth);
+
 	if (sc->sc_width > 4) {
 		error = ENXIO;
 		goto out;
