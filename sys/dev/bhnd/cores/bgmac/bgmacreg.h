@@ -58,6 +58,8 @@ enum bgmac_intr_status
 #define	BGMAC_REG_INTR_RECV_LAZY			0x100
 #define 	BGMAC_REG_INTR_RECV_LAZY_FC_SHIFT	24
 
+#define	BGMAC_FLOW_CTL_THRESH				0x104
+
 #define	BGMAC_REG_PHY_ACCESS				0x180
 #define		BGMAC_REG_PHY_ACCESS_DATA  		0x0000ffff
 #define		BGMAC_REG_PHY_ACCESS_ADDR		0x001f0000
@@ -69,6 +71,16 @@ enum bgmac_intr_status
 
 #define	BGMAC_REG_PHY_CONTROL				0x188
 #define		BGMAC_REG_PHY_CONTROL_ADDR			0x0000001f
+
+#define	BGMAC_REG_TXQ_CTL				0x18c
+#define		BGMAC_TXQ_CTL_DBT_MASK			0x00000fff
+#define		BGMAC_TXQ_CTL_DBT_SHIFT			0
+#define	BGMAC_REG_RXQ_CTL				0x190
+#define		BGMAC_RXQ_CTL_DBT_MASK			0x00000fff
+#define		BGMAC_RXQ_CTL_DBT_SHIFT			0
+#define		BGMAC_RXQ_CTL_PTE			0x00001000
+#define		BGMAC_RXQ_CTL_MDP_MASK			0x3f000000
+#define		BGMAC_RXQ_CTL_MDP_SHIFT			24
 
 #define	BGMAC_REG_DMA_RX_BASE				0x220
 #define	BGMAC_REG_DMA_RX_CTRL				0x220
@@ -111,8 +123,38 @@ enum bgmac_intr_status
 
 /* MIB registers (statistics) */
 
+#define	BGMAC_MIB_TX_BYTES				0x30c
 #define	BGMAC_MIB_TX_PCKTS				0x314
+#define	BGMAC_MIB_TX_ERR_JABBER_PKTS			0x348	/* Error */
+#define	BGMAC_MIB_TX_ERR_OVERSIZE_PKTS			0x34c	/* Error */
+#define	BGMAC_MIB_TX_ERR_UNDERRUNS			0x354	/* Error */
+#define	BGMAC_MIB_TX_ERR_EXCESSIVE_COLS			0x364	/* Error */
+#define	BGMAC_MIB_TX_ERR_LATE_COLS			0x368	/* Error */
+#define	BGMAC_MIB_TX_DEFERED				0x36c
+
+#define	BGMAC_MIB_TX_Q0_PKTS				0x37c
+#define	BGMAC_MIB_TX_Q0_OCTETS				0x380
+#define	BGMAC_MIB_TX_Q0_OCTETS_HIGH			0x384
+#define	BGMAC_MIB_TX_Q1_PKTS				0x388
+#define	BGMAC_MIB_TX_Q1_OCTETS				0x38c
+#define	BGMAC_MIB_TX_Q1_OCTETS_HIGH			0x390
+#define	BGMAC_MIB_TX_Q2_PKTS				0x394
+#define	BGMAC_MIB_TX_Q2_OCTETS				0x398
+#define	BGMAC_MIB_TX_Q2_OCTETS_HIGH			0x39c
+#define	BGMAC_MIB_TX_Q3_PKTS				0x3a0
+#define	BGMAC_MIB_TX_Q3_OCTETS				0x3a4
+#define	BGMAC_MIB_TX_Q3_OCTETS_HIGH			0x3a8
+
+#define	BGMAC_MIB_RX_BYTES				0x3bc
 #define	BGMAC_MIB_RX_PCKTS				0x3c4
+#define	BGMAC_MIB_RX_ERR_JABBER_PCKTS			0x3f8	/* Error */
+#define	BGMAC_MIB_RX_ERR_OVERSIZE_PCKTS			0x3fc	/* Error */
+#define	BGMAC_MIB_RX_ERR_MISSED_PCKTS			0x404	/* Error */
+#define	BGMAC_MIB_RX_ERR_CRC_ALIGN			0x408	/* Error */
+#define	BGMAC_MIB_RX_ERR_UNDERSIZE			0x40c	/* Error */
+#define	BGMAC_MIB_RX_ERR_CRC				0x410	/* Error */
+#define	BGMAC_MIB_RX_ERR_ALIGN				0x414	/* Error */
+#define	BGMAC_MIB_RX_ERR_SYMBOL				0x418	/* Error */
 
 #define	BGMAC_REG_CMD_CFG			0x808
 #define		BGMAC_REG_CMD_CFG_TX		0x00000001
@@ -121,6 +163,9 @@ enum bgmac_intr_status
 #define 	BGMAC_REG_CMD_CFG_RESET		0x00000800
 
 #define	BGMAC_REG_RX_MAX_LEN			0x814
+
+#define BGMAC_PAUSE_CTL				0xb30
+#
 
 /* UNKNOWN purpose */
 #define	BGMAC_PWR_CTL				0x1e8

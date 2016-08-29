@@ -62,6 +62,9 @@ __FBSDID("$FreeBSD$");
 #include <netinet/ip.h>
 #include <netinet/tcp.h>
 
+#define	BHND_LOGGING	BHND_INFO_LEVEL
+#include <dev/bhnd/bhnd_debug.h>
+
 #include "bgmac.h"
 #include "bgmacvar.h"
 #include "bgmacreg.h"
@@ -69,9 +72,6 @@ __FBSDID("$FreeBSD$");
 #include "bcm_dma.h"
 #include "bcm_dma_reg.h"
 #include "bcm_dma_ringvar.h"
-
-#define	BHND_LOGGING	BHND_INFO_LEVEL
-#include <dev/bhnd/bhnd_debug.h>
 
 int
 bcm_dma_tx_start(struct bcm_dma *dma, struct mbuf *m)

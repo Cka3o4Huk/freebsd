@@ -30,16 +30,71 @@
 #ifndef _BGMAC_H_
 #define _BGMAC_H_
 
+#include <sys/bus.h>
+
+#include <machine/bus.h>
+
+#include <dev/bhnd/bhnd_debug.h>
+
+#include "bgmacreg.h"
+#include "bgmacvar.h"
+
 #define BGMACDUMPREG(sc, _reg)						\
-	BHND_DEBUG_DEV(sc->dev, #_reg "=%08x", bus_read_4(sc->mem, _reg))
+	BHND_INFO_DEV(sc->dev, #_reg "=%08x", bus_read_4(sc->mem, _reg))
+
+#define BGMACDUMPREGF(sc, _reg, _func)					\
+	do {								\
+		uint32_t val = bus_read_4(sc->mem, _reg);		\
+		char* desc = _func(val);				\
+		BHND_INFO_DEV(sc->dev,  #_reg "=%08x (%s)", val, desc)	\
+		free(desc, M_TEMP);						\
+	} while (0);
+
+#define	BUFSIZE		80
+
+static inline char*
+bgmac_decode_ctl(uint32_t val)
+{
+	int		 len;
+	char		*buf;
+
+	len = 0;
+	buf = malloc(BUFSIZE * sizeof(char), M_TEMP, M_WAITOK);
+	if (buf == NULL)
+		return "";
+
+#define PRINT(...)							\
+	if (BUFSIZE > len)						\
+		len += snprintf(buf + len, BUFSIZE - len, ## __VA_ARGS__);
+
+#define PRBOOL(_mask, _prf, _false, _true)				\
+	PRINT(_prf, (((val & _mask) == 0) ? _false : _true))
+
+#define PRRAW(_mask, _prf)						\
+	PRINT(_prf, (val & _mask))
+
+	PRBOOL(BGMAC_REG_DMA_RX_CTRL_ENABLE, "%s,", "OFF", "ON");
+	PRBOOL(BGMAC_REG_DMA_RX_CTRL_PIOMODE, "%s,", "DMA", "PIO");
+	PRBOOL(BGMAC_REG_DMA_RX_CTRL_SRXHDENABLE, "%s,", "", "SRXHD");
+	PRBOOL(BGMAC_REG_DMA_RX_CTRL_OVERFLOW_CONT, "%s,", "", "OVERFLOWCNT");
+	PRBOOL(BGMAC_REG_DMA_RX_CTRL_DISABLE_PARITYCHK, "%s,", "PARITYCHK", "");
+	PRRAW(BGMAC_REG_DMA_RX_CTRL_FRAMEOFFSET, "off:%08x,");
+	PRRAW(BGMAC_REG_DMA_RX_CTRL_ADDR_EXTENSION, "ext:%08x");
+
+#undef PRINT
+#undef PRBOOL
+#undef PRRAW
+	return (buf);
+}
+
 #define BGMACDUMP(sc)							\
-	BGMACDUMPREG(sc,BGMAC_REG_DMA_TX_CTRL);				\
-	BGMACDUMPREG(sc,BGMAC_REG_DMA_TX_INDEX);			\
-	BGMACDUMPREG(sc,BGMAC_REG_DMA_TX_RINGLOW);			\
-	BGMACDUMPREG(sc,BGMAC_REG_DMA_TX_RINGHIGH);			\
-	BGMACDUMPREG(sc,BGMAC_REG_DMA_TX_STATE);			\
-	BGMACDUMPREG(sc,BGMAC_REG_DMA_TX_ERROR);			\
-	BGMACDUMPREG(sc,BGMAC_REG_DMA_RX_CTRL);				\
+	BGMACDUMPREGF(sc,BGMAC_REG_DMA_TX_CTRL, bgmac_decode_ctl)	\
+	BGMACDUMPREG(sc,BGMAC_REG_DMA_TX_INDEX)				\
+	BGMACDUMPREG(sc,BGMAC_REG_DMA_TX_RINGLOW)			\
+	BGMACDUMPREG(sc,BGMAC_REG_DMA_TX_RINGHIGH)			\
+	BGMACDUMPREG(sc,BGMAC_REG_DMA_TX_STATE)				\
+	BGMACDUMPREG(sc,BGMAC_REG_DMA_TX_ERROR)				\
+	BGMACDUMPREGF(sc,BGMAC_REG_DMA_RX_CTRL, bgmac_decode_ctl)	\
 	BGMACDUMPREG(sc,BGMAC_REG_DMA_RX_INDEX);			\
 	BGMACDUMPREG(sc,BGMAC_REG_DMA_RX_RINGLOW);			\
 	BGMACDUMPREG(sc,BGMAC_REG_DMA_RX_RINGHIGH);			\
@@ -54,10 +109,36 @@
 	BGMACDUMPREG(sc,BGMAC_REG_INTERRUPT_MASK);			\
 	BGMACDUMPREG(sc,BGMAC_REG_GP_TIMER);				\
 	BGMACDUMPREG(sc,BGMAC_REG_INTR_RECV_LAZY);			\
-	BGMACDUMPREG(sc,BGMAC_MIB_TX_PCKTS);				\
-	BGMACDUMPREG(sc,BGMAC_MIB_RX_PCKTS);				\
 	BGMACDUMPREG(sc,BGMAC_PWR_CTL);					\
-	BGMACDUMPREG(sc,BGMAC_CLOCK_CONTROL_ST);
+	BGMACDUMPREG(sc,BGMAC_CLOCK_CONTROL_ST);			\
+	BGMACDUMPREG(sc,BGMAC_FLOW_CTL_THRESH);				\
+	BGMACDUMPREG(sc,BGMAC_PAUSE_CTL);				\
+	BGMACDUMPREG(sc,BGMAC_REG_TXQ_CTL);				\
+	BGMACDUMPREG(sc,BGMAC_REG_RXQ_CTL);
+
+#define BGMACDUMPMIB(sc)						\
+	BGMACDUMPREG(sc,BGMAC_MIB_TX_BYTES);				\
+	BGMACDUMPREG(sc,BGMAC_MIB_TX_PCKTS);				\
+	BGMACDUMPREG(sc,BGMAC_MIB_TX_DEFERED);				\
+	BGMACDUMPREG(sc,BGMAC_MIB_TX_Q0_PKTS);				\
+	BGMACDUMPREG(sc,BGMAC_MIB_TX_Q0_OCTETS);			\
+	BGMACDUMPREG(sc,BGMAC_MIB_RX_BYTES);				\
+	BGMACDUMPREG(sc,BGMAC_MIB_RX_PCKTS);
+
+#define BGMACDUMPERRORS(sc)						\
+	BGMACDUMPREG(sc,BGMAC_MIB_TX_ERR_JABBER_PKTS);			\
+	BGMACDUMPREG(sc,BGMAC_MIB_TX_ERR_OVERSIZE_PKTS);		\
+	BGMACDUMPREG(sc,BGMAC_MIB_TX_ERR_UNDERRUNS);			\
+	BGMACDUMPREG(sc,BGMAC_MIB_TX_ERR_EXCESSIVE_COLS);		\
+	BGMACDUMPREG(sc,BGMAC_MIB_TX_ERR_LATE_COLS);			\
+	BGMACDUMPREG(sc,BGMAC_MIB_RX_ERR_JABBER_PCKTS);			\
+	BGMACDUMPREG(sc,BGMAC_MIB_RX_ERR_OVERSIZE_PCKTS);		\
+	BGMACDUMPREG(sc,BGMAC_MIB_RX_ERR_MISSED_PCKTS);			\
+	BGMACDUMPREG(sc,BGMAC_MIB_RX_ERR_CRC_ALIGN);			\
+	BGMACDUMPREG(sc,BGMAC_MIB_RX_ERR_UNDERSIZE);			\
+	BGMACDUMPREG(sc,BGMAC_MIB_RX_ERR_CRC);				\
+	BGMACDUMPREG(sc,BGMAC_MIB_RX_ERR_ALIGN);			\
+	BGMACDUMPREG(sc,BGMAC_MIB_RX_ERR_SYMBOL);
 
 void	bgmac_if_start(struct ifnet *ifp);
 
