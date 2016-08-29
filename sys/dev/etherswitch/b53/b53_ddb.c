@@ -41,6 +41,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/kernel.h>
 #include <sys/module.h>
 #include <sys/bus.h>
+#include <sys/rman.h>
 #include <sys/queue.h>
 
 #include <ddb/ddb.h>
@@ -48,6 +49,11 @@ __FBSDID("$FreeBSD$");
 
 #include "b53_var.h"
 #include "b53_reg.h"
+
+#ifdef B53PRINT
+#undef B53PRINT
+#endif
+#define	B53PRINT(dev)		db_printf(
 
 static struct command_table db_b53_table = LIST_HEAD_INITIALIZER(db_t4_table);
 _DB_SET(_show, b53, NULL, db_show_table, 0, &db_b53_table);
@@ -132,7 +138,7 @@ DB_FUNC(dump, db_show_b53dump, db_b53_table, CS_OWN, NULL)
 
 	if (dev != NULL) {
 		sc = device_get_softc(dev);
-		B53DUMP();
+		B53DUMP;
 	} else
 		db_printf("usage: show b53 dump <b53device>\n");
 

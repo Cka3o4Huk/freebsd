@@ -40,9 +40,11 @@ static int	b53115hal_get_vlan_group(struct b53_softc *sc, int vlan_group,
 static int	b53115hal_set_vlan_group(struct b53_softc *sc, int vlan_group,
 		    int vlan_id, int members, int untagged, int forward_id);
 static int 	b53115hal_reset(struct b53_softc *sc);
+static int 	b53115hal_vlan_enable(struct b53_softc *sc, int on);
 
 struct b53_functions b53115_f = {
 	.reset = b53115hal_reset,
+	.vlan_enable = b53115hal_vlan_enable,
 	.vlan_get_vlan_group = b53115hal_get_vlan_group,
 	.vlan_set_vlan_group = b53115hal_set_vlan_group
 };
@@ -73,36 +75,76 @@ b53115hal_reset(struct b53_softc *sc)
 }
 
 static int
+b53115hal_vlan_enable(struct b53_softc *sc, int on)
+{
+	uint32_t	ctl0, ctl1, drop, ctl4, ctl5, sw;
+
+	drop = 0;
+
+	B53_RD(VLAN_GLOBAL_CTL0, ctl0, sc);
+	B53_RD(VLAN_GLOBAL_CTL1, ctl1, sc);
+	/* b53115-specific */
+	B53_RD(VLAN_GLOBAL_CTL4_531xx, ctl4, sc);
+	ctl4 &= ~VLAN_GLOBAL_CTL4_VID_MASK;
+	B53_RD(VLAN_GLOBAL_CTL5_531xx, ctl5, sc);
+
+	device_printf(sc->sc_dev, "ctl <=: %x/%x/%x/%x\n", ctl0, ctl1, ctl4,
+	    ctl5);
+
+	if (on) {
+		ctl0 |= VLAN_GLOBAL_CTL0_1Q_ENABLE |
+			    VLAN_GLOBAL_CTL0_MATCH_VIDMAC |
+			    VLAN_GLOBAL_CTL0_HASH_VIDADDR;
+		ctl1 |= VLAN_GLOBAL_CTL1_MCAST_UNTAGMAP_CHECK |
+			    VLAN_GLOBAL_CTL1_MCAST_FWDMAP_CHECK;
+		ctl4 |= VLAN_GLOBAL_CTL4_DROP_VID_VIOLATION;
+		ctl5 |= VLAN_GLOBAL_CTL5_DROP_VTAB_MISS;
+
+		/* b53115-specific: TODO: add support of 4095 vlans */
+		ctl5 &= ~VLAN_GLOBAL_CTL5_VID_4095_ENABLE;
+	} else {
+		ctl0 &= ~(VLAN_GLOBAL_CTL0_1Q_ENABLE |
+			    VLAN_GLOBAL_CTL0_MATCH_VIDMAC |
+			    VLAN_GLOBAL_CTL0_HASH_VIDADDR);
+		ctl1 &= ~(VLAN_GLOBAL_CTL1_MCAST_UNTAGMAP_CHECK |
+			    VLAN_GLOBAL_CTL1_MCAST_FWDMAP_CHECK);
+		ctl5 &= ~VLAN_GLOBAL_CTL5_DROP_VTAB_MISS;
+
+		/* b53115-specific */
+		ctl4 |= VLAN_GLOBAL_CTL4_FWD_TO_MII;
+		ctl5 &= ~VLAN_GLOBAL_CTL5_VID_4095_ENABLE;
+	}
+
+	device_printf(sc->sc_dev, "ctl =>: %x/%x/%x/%x\n", ctl0, ctl1, ctl4,
+	    ctl5);
+
+	B53_WR(VLAN_GLOBAL_CTL0, ctl0, sc);
+	B53_WR(VLAN_GLOBAL_CTL1, ctl1, sc);
+	/* b53115-specific */
+	B53_WR(VLAN_DROP_UNTAGGED, drop, sc);
+	B53_WR(VLAN_GLOBAL_CTL4_531xx, ctl4, sc);
+	B53_WR(VLAN_GLOBAL_CTL5_531xx, ctl5, sc);
+
+	B53_RD(SWITCH_MODE, sw, sc);
+	sw &= ~SWITCH_MODE_MANAGED;
+	B53_WR(SWITCH_MODE, sw, sc);
+	return (0);
+}
+
+static int
 b53115hal_get_vlan_group(struct b53_softc *sc, int vlan_group,
 		    int *vlan_id, int *members, int *untagged, int *forward_id)
 {
 	uint32_t		 reg;
-	int			 error;
 
 	/* Set VLAN_GROUP as input */
-	error = b53chip_write4(sc, VLAN_TABLE_INDX_5395, vlan_group);
-	if (error) {
-		device_printf(sc->sc_dev, "can't write to VLAN_TABLE_INDX_5395:"
-		    "%d\n", error);
-		return (error);
-	}
-
+	B53_WR(VLAN_TABLE_INDX_5395, vlan_group, sc);
 	/* Execute READ vlan information */
 	reg = VLAN_TABLE_ACCESS_5395_RUN | VLAN_TABLE_ACCESS_5395_READ;
-	error = b53chip_write4(sc, VLAN_TABLE_ACCESS_5395, reg);
-	if (error) {
-		device_printf(sc->sc_dev, "can't write to VLAN_TABLE_ACCESS_5395 "
-		    "%d\n", error);
-		return (error);
-	}
-
+	B53_WR(VLAN_TABLE_ACCESS_5395, reg, sc);
 	/* Read result */
-	error = b53chip_op(sc, VLAN_TABLE_ENTRY_5395, &reg, 0);
-	if (error){
-		device_printf(sc->sc_dev, "can't read to VLAN_TABLE_ENTRY_5395 "
-		"reg: %d\n", error);
-		return (error);
-	}
+	B53_RD(VLAN_TABLE_ENTRY_5395, reg, sc);
+
 #if 0
 	printf("reg[%d] = 0x%x\n",vlan_group, reg);
 #endif
@@ -121,30 +163,18 @@ b53115hal_set_vlan_group(struct b53_softc *sc, int vlan_group,
 		    int vlan_id, int members, int untagged, int forward_id)
 {
 	uint32_t		 reg;
-	int			 error;
 
 	/* TODO: check range of vlan group */
 
-	reg = VLAN_RW_VALID_5358;
-	reg|= vlan_group << 12;
-	reg|= B53_SHIFT(members, VLAN_RW_MEMBER);
-	reg|= B53_SHIFT(untagged, VLAN_RW_UNTAGGED);
-	error = b53chip_write4(sc, VLAN_WRITE, reg);
-	if (error) {
-		device_printf(sc->sc_dev, "can't write to VLAN_WRITE"
-		    "[%d]: %d\n", vlan_group, error);
-		return (error);
-	}
+	/* Set new entry */
+	reg = B53_SHIFT(untagged, VLAN_RW_UNTAGGED_5395);
+	reg |= B53_SHIFT(members, VLAN_RW_MEMBER_5395);
+	B53_WR(VLAN_TABLE_ENTRY_5395, reg, sc);
 	/* Set VLAN_GROUP as input */
-	reg = VLAN_TABLE_ACCESS_RW_ENABLE;
-	reg|= VLAN_TABLE_ACCESS_WRITE;
-	reg|= vlan_group & VLAN_TABLE_ACCESS_VID_MASK;
-	error = b53chip_write4(sc, VLAN_TABLE_ACCESS, reg);
-	if (error) {
-		device_printf(sc->sc_dev, "can't write to VLAN_TABLE_ACCESS"
-		    "[%d]: %d\n", vlan_group, error);
-		return (error);
-	}
+	B53_WR(VLAN_TABLE_INDX_5395, vlan_group, sc);
+	/* Execute READ vlan information */
+	reg = VLAN_TABLE_ACCESS_5395_RUN;
+	B53_WR(VLAN_TABLE_ACCESS_5395, reg, sc);
 
 	return (0);
 }
