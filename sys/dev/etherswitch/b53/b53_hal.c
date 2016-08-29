@@ -40,9 +40,10 @@ __FBSDID("$FreeBSD$");
 #include <sys/module.h>
 #include <sys/bus.h>
 
+#ifdef WITH_BHND
 #include <dev/bhnd/bhnd.h>
-
 #include "bhnd_bus_if.h"
+#endif
 
 #include "b53_reg.h"
 #include "b53_hal.h"
@@ -61,6 +62,7 @@ static struct b53hal_mapping integrated_ids[] = {
 
 static struct b53hal_mapping outband_ids[] = {
 	{0x53115, &b53115_hal},
+	{0x53125, &b53115_hal}, 	/* BananaPiR1 SWITCH_DEVICEID=00053125*/
 	{0, NULL}
 };
 
@@ -95,7 +97,9 @@ b53hal_init(struct b53_softc *sc)
 static struct b53_hal *
 b53hal_lookup(struct b53_softc *sc)
 {
+#ifdef WITH_BHND
 	const struct bhnd_chipid	*chip;
+#endif
 	struct b53hal_mapping 		*ptr;
 	char				*map_type;
 	uint32_t 		 	 switchid;
@@ -106,10 +110,11 @@ b53hal_lookup(struct b53_softc *sc)
 	err = b53chip_op(sc, SWITCH_DEVICEID, &switchid, 0);
 	if (err || switchid == 0) {
 		/* assume integrated etherswitch */
+#ifdef WITH_BHND
 		chip = BHND_BUS_GET_CHIPID(device_get_parent(dev), dev);
 		if (chip != NULL)
 			switchid = chip->chip_id;
-
+#endif
 		ptr = integrated_ids;
 		map_type = "integrated";
 	} else {
