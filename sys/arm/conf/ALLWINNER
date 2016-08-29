@@ -26,7 +26,12 @@ ident		ALLWINNER
 include 	"std.armv6"
 include 	"../allwinner/std.allwinner"
 
+hints		"ALLWINNER.hints"
+
 options 	INTRNG
+
+options		BOOTVERBOSE=1
+makeoptions	DEBUG="-g3"		#Build kernel with gdb(1) debug symbols
 
 options 	SOC_ALLWINNER_A20
 options 	SOC_ALLWINNER_A31
@@ -117,6 +122,10 @@ device		awg			# 10/100/1000 integrated EMAC controller
 
 # USB ethernet support, requires miibus
 device		miibus
+device		mdio
+device		etherswitch
+device		miiproxy
+device		vlan
 
 # Sound support
 device		sound
