@@ -57,13 +57,14 @@
 #include <machine/bus.h>
 #include <machine/resource.h>
 
+#define	BHND_LOGGING	BHND_INFO_LEVEL
+
 #include "bgmac.h"
 #include "bgmacvar.h"
 #include "bgmacreg.h"
 
 #include "bcm_dma.h"
 
-#define	BHND_LOGGING	BHND_INFO_LEVEL
 #include <dev/bhnd/bhnd_debug.h>
 
 /* ***************************************************************

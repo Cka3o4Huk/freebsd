@@ -77,7 +77,7 @@
 #include <machine/bus.h>
 #include <machine/resource.h>
 
-#define	BHND_LOGGING	BHND_INFO_LEVEL
+#define	BHND_LOGGING	BHND_TRACE_LEVEL
 #include <dev/bhnd/bhnd.h>
 #include <dev/bhnd/bhnd_ids.h>
 
@@ -210,9 +210,19 @@ bgmac_attach(device_t dev)
 		return (ENOMEM);
 	}
 
+	/* clear interrupt status */
+	uint32_t intr_status = bus_read_4(sc->mem, BGMAC_REG_INTR_STATUS);
+	bus_write_4(sc->mem, BGMAC_REG_INTR_STATUS, intr_status);
+
+	BHND_TRACE_DEV(sc->dev, "clear bgmac_intr_status: 0x%x", intr_status);
+
+	/* Flow control - on/off and pause */
+	bus_write_4(sc->mem, BGMAC_FLOW_CTL_THRESH, 0x03cb04cb);
+	bus_write_4(sc->mem, BGMAC_PAUSE_CTL, 0x27fff);
+
 	error = bcm_dma_attach(dev, sc->mem, sc->dma);
 	if (error) {
-		BHND_ERROR_DEV(dev, "error occurried during bcm_dma_attach: %d",
+		BHND_ERROR_DEV(dev, "error occurred during bcm_dma_attach: %d",
 		    error);
 		/*
 		 * TODO: cleanup
@@ -223,10 +233,11 @@ bgmac_attach(device_t dev)
 	bgmac_if_setup(dev);
 	BGMAC_LOCK_INIT(sc);
 
+	/* Attach MDIO bus to discover ethernet switch */
 	sc->mdio = device_add_child(dev, "mdio", -1);
 	bus_generic_attach(dev);
 
-	return 0;
+	return 	0;
 }
 
 static void
@@ -327,8 +338,8 @@ bgmac_if_setup(device_t dev)
 	if_setstartfn(ifp, bgmac_if_start);
 
 	ifmedia_init(&sc->ifmedia, 0, bgmac_if_mediachange, bgmac_if_mediastatus);
-	ifmedia_add(&sc->ifmedia, IFM_ETHER | IFM_100_T2 | IFM_FDX, 0, NULL);
-	ifmedia_set(&sc->ifmedia, IFM_ETHER | IFM_100_T2 | IFM_FDX);
+	ifmedia_add(&sc->ifmedia, IFM_ETHER | IFM_1000_T | IFM_FDX, 0, NULL);
+	ifmedia_set(&sc->ifmedia, IFM_ETHER | IFM_1000_T | IFM_FDX);
 
 	ether_ifattach(ifp, sc->addr);
 	ifp->if_capabilities = ifp->if_capenable = IFCAP_RXCSUM | IFCAP_TXCSUM;
@@ -370,7 +381,7 @@ bgmac_if_mediastatus(struct ifnet *ifp, struct ifmediareq *ifmr)
 
 	ifmr->ifm_status = IFM_AVALID | IFM_ACTIVE;
 	/* TODO: retrieve mode & duplex info from softc */
-	ifmr->ifm_active = IFM_ETHER | IFM_100_T2 | IFM_FDX;
+	ifmr->ifm_active = IFM_ETHER | IFM_1000_T | IFM_FDX;
 }
 
 static void
