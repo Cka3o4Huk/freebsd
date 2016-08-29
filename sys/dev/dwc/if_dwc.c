@@ -75,9 +75,17 @@ __FBSDID("$FreeBSD$");
 #include <dev/extres/hwreset/hwreset.h>
 #endif
 
+#if 1
+#include <dev/etherswitch/miiproxy.h>
+#endif
+
 #include "if_dwc_if.h"
 #include "gpio_if.h"
 #include "miibus_if.h"
+
+#include "mdio_if.h"
+
+#include <dev/mdio/mdio.h>
 
 #define	READ4(_sc, _reg) \
 	bus_read_4((_sc)->res[0], _reg)
@@ -401,7 +409,8 @@ dwc_tick(void *arg)
 
 	/* Check the media status. */
 	link_was_up = sc->link_is_up;
-	mii_tick(sc->mii_softc);
+	if (sc->mii_softc != NULL)
+		mii_tick(sc->mii_softc);
 	if (sc->link_is_up && !link_was_up)
 		dwc_txstart_locked(sc);
 
@@ -448,7 +457,8 @@ dwc_init_locked(struct dwc_softc *sc)
 	 * Call mii_mediachg() which will call back into dwc_miibus_statchg()
 	 * to set up the remaining config registers based on current media.
 	 */
-	mii_mediachg(sc->mii_softc);
+	if (sc->mii_softc != NULL)
+		mii_mediachg(sc->mii_softc);
 	callout_reset(&sc->dwc_callout, hz, dwc_tick, sc);
 }
 
@@ -691,7 +701,8 @@ dwc_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
 	case SIOCSIFMEDIA:
 	case SIOCGIFMEDIA:
 		mii = sc->mii_softc;
-		error = ifmedia_ioctl(ifp, ifr, &mii->mii_media, cmd);
+		if (mii)
+			error = ifmedia_ioctl(ifp, ifr, &mii->mii_media, cmd);
 		break;
 	case SIOCSIFCAP:
 		mask = ifp->if_capenable ^ ifr->ifr_reqcap;
@@ -1242,6 +1253,8 @@ dwc_attach(device_t dev)
 	ifp->if_snd.ifq_drv_maxlen = TX_DESC_COUNT - 1;
 	IFQ_SET_READY(&ifp->if_snd);
 
+
+#if 0
 	/* Attach the mii driver. */
 	error = mii_attach(dev, &sc->miibus, ifp, dwc_media_change,
 	    dwc_media_status, BMSR_DEFCAPMASK, MII_PHY_ANY,
@@ -1252,6 +1265,10 @@ dwc_attach(device_t dev)
 		return (ENXIO);
 	}
 	sc->mii_softc = device_get_softc(sc->miibus);
+#endif
+
+	sc->miiproxy = device_add_child(dev, "mdio", -1);
+	bus_generic_attach(dev);
 
 	/* All ready to run, attach the ethernet interface. */
 	ether_ifattach(ifp, macaddr);
@@ -1376,6 +1393,10 @@ static device_method_t dwc_methods[] = {
 	DEVMETHOD(miibus_writereg,	dwc_miibus_write_reg),
 	DEVMETHOD(miibus_statchg,	dwc_miibus_statchg),
 
+	/** MDIO interface **/
+	DEVMETHOD(mdio_readreg,		dwc_miibus_read_reg),
+	DEVMETHOD(mdio_writereg,	dwc_miibus_write_reg),
+
 	{ 0, 0 }
 };
 
@@ -1389,6 +1410,7 @@ static devclass_t dwc_devclass;
 
 DRIVER_MODULE(dwc, simplebus, dwc_driver, dwc_devclass, 0, 0);
 DRIVER_MODULE(miibus, dwc, miibus_driver, miibus_devclass, 0, 0);
+DRIVER_MODULE(mdio, dwc, mdio_driver, mdio_devclass, 0, 0);
 
 MODULE_DEPEND(dwc, ether, 1, 1, 1);
 MODULE_DEPEND(dwc, miibus, 1, 1, 1);

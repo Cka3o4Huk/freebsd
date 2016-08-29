@@ -1,3 +1,10 @@
 # $FreeBSD$
 
 arm/allwinner/a20/a20_padconf.c		standard
+
+dev/etherswitch/b53/b53.c		optional etherswitch
+dev/etherswitch/b53/b5325hal.c		optional etherswitch
+dev/etherswitch/b53/b5358hal.c		optional etherswitch
+dev/etherswitch/b53/b53115hal.c		optional etherswitch
+dev/etherswitch/b53/b53_ddb.c		optional etherswitch
+dev/etherswitch/b53/b53_hal.c		optional etherswitch
