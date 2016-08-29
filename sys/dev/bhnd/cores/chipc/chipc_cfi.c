@@ -75,8 +75,14 @@ chipc_cfi_probe(device_t dev)
 static int
 chipc_cfi_attach(device_t dev)
 {
+	int	err;
 	chipc_register_slicer(CHIPC_PFLASH_CFI);
-	return (cfi_attach(dev));
+	err = cfi_attach(dev);
+	if (err == 0) {
+		bus_generic_probe(dev);
+		bus_generic_attach(dev);
+	}
+	return (err);
 }
 
 static device_t
