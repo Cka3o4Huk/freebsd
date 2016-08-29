@@ -94,14 +94,6 @@ static int	b53mii_readreg(device_t dev, int phy, int reg);
 static void	b53mii_tick(void *arg);
 static void	b53mii_pollstat(struct b53_softc *sc);
 
-
-/* Etherswitch interface */
-static void	b53switch_lock(device_t dev);
-static void	b53switch_unlock(device_t dev);
-static int	b53switch_getvgroup(device_t dev, etherswitch_vlangroup_t *vg);
-static int	b53switch_getport(device_t dev, etherswitch_port_t *p);
-static int	b53switch_setport(device_t dev, etherswitch_port_t *p);
-
 static etherswitch_info_t*	b53switch_getinfo(device_t dev);
 
 /* Media callbacks */
@@ -126,11 +118,13 @@ static int
 b53_attach(device_t dev)
 {
 	struct b53_softc	*sc;
-	int			 i, err;
+	int			 i, err, is_b53_reset;
 	char 			 name[IFNAMSIZ];
 #if 0
 	uint32_t		 reg;
 #endif
+
+	is_b53_reset = 1;
 
 	sc = device_get_softc(dev);
 	sc->sc_dev = dev;
@@ -141,70 +135,104 @@ b53_attach(device_t dev)
 
 	mtx_init(&sc->sc_mtx, "b53", NULL, MTX_DEF);
 
-	if (bootverbose)
-		B53DUMP();
-
-#if 0
-	/*
-	 * XXX: Avoid default configuration, bootloader must set it or we
-	 * must load user defined
-	 */
-	if (b53chip_reset(dev))
-		device_printf(dev, "reset failed\n");
-#endif
-
+	sc->info.es_nports = 5; //B53_NUM_PHYS
+	strcpy(sc->info.es_name, "Broadcom 53xx switch");
+	sc->info.es_nvlangroups = 16;
+	sc->info.es_vlan_caps = 0;
+	sc->info.es_vlan_caps = ETHERSWITCH_VLAN_DOT1Q | ETHERSWITCH_VLAN_PORT;
 
 	/* Initialize HAL by switch ID and chipcommon ID */
 	b53hal_init(sc);
 
-#if 0
-	b53chip_write4(sc, PORT_CTL(PORTMII), PORTMII_CTL_BCAST_ENABLED |
-			PORTMII_CTL_MCAST_ENABLED | PORTMII_CTL_UCAST_ENABLED);
-#endif
+	/* Check HAL prerequisites */
+	if (sc->hal.vlan_enable == NULL) {
+		/* TODO: if (err) add detach */
+		device_printf(dev, "[ERROR] no HAL for enable 1q\n");
+		goto fail;
+	}
+
+	/* Last step before chip operations */
+	if (bootverbose)
+		B53DUMP;
+
+	/* Turn off forwarding - start manipulations with rules/routes */
+	err = b53chip_enable_fw(dev, 0);
+	if (err != 0) {
+		device_printf(dev, "can't disable forwarding\n");
+		goto fail;
+	}
+
+	/*
+	 * XXX: Avoid default configuration, bootloader must set it or we
+	 * must load user defined
+	 */
+	if (is_b53_reset & b53chip_reset(dev))
+		device_printf(dev, "reset failed\n");
 
 	if (sc->hal.reset != NULL) {
 		sc->hal.reset(sc);
 		/* TODO: if (err) add detach */
 	}
 
+	/* Enable VLAN support */
+	sc->hal.vlan_enable(sc, 1);
+	sc->hal.vlan_set_vlan_group(sc, B53_DEF_VLANID, B53_DEF_VLANID,
+	    B53_DEF_MASK, B53_DEF_MASK, 0);
+
+	/* At startup, let's specify all physical ports as one default VLAN group */
+	for (i = 0; i < sc->info.es_nports; i++) {
+		int	ctl;
+		/* set PVID to default value */
+		sc->hal.vlan_set_pvid(sc, i, B53_DEF_VLANID);
+
+		/* enable Tx/Rx on physical port */
+		ctl = b53chip_read4(sc, PORT_CTL(i));
+		ctl &= ~PORT_CTL_STP_STATE_MASK;
+		ctl &= ~PORT_CTL_TX_DISABLED & ~PORT_CTL_RX_DISABLED;
+		b53chip_write4(sc, PORT_CTL(i), ctl);
+	}
+
+	/* Allows broadcast, unicast and multicast on CPU port */
+	b53chip_write4(sc, PORT_CTL(PORTMII), PORTMII_CTL_BCAST_ENABLED |
+		PORTMII_CTL_MCAST_ENABLED | PORTMII_CTL_UCAST_ENABLED);
+
 #if 0
-	if ((reg & PORTMII_STATUS_PAUSE_CAPABLE))
+	/* PAUSE capability handling */
+	if (reg & PORTMII_STATUS_PAUSE_CAPABLE)
 	{
+		reg = b53chip_read4(sc, PORTMII_STATUS_OVERRIDE);
 		/* Disable pause */
 		reg &= ~((uint32_t)PORTMII_STATUS_PAUSE_CAPABLE);
+
 		b53chip_write4(sc, PORTMII_STATUS_OVERRIDE, reg);
 		/* Read back */
 		err = b53chip_op(sc, PORTMII_STATUS_OVERRIDE, &reg, 0);
-		if (err || !(reg & PORTMII_STATUS_REVERSE_MII))
+		if (err || !(reg & PORTMII_STATUS_PAUSE_CAPABLE))
 		{
-			device_printf(dev, "Unable to resume chip\n");
+			device_printf(dev, "[ERROR] Unable to resume chip\n");
 			/* TODO: add detach */
-			return (ENXIO);
+			/* return (ENXIO); */
 		}
 	}
 #endif
 
-	/*
-	 * XXX: We need prefetch existing sc->base_vlan here.
-	 * XXX: Avoid default configuration, bootloader must set it or we
-	 * must load user defined
-	 */
+	/* Turn on forwarding - done with manipulations with rules/routes */
+	err = b53chip_enable_fw(dev, 1);
+	if (err != 0) {
+		device_printf(dev, "can't enable forwarding\n");
+		goto fail;
+	}
 
 	if (bootverbose)
-		B53DUMP();
+		B53DUMP;
 
 	/*
 	 * TODO:
 	 *  - fetch etherswitch info
 	 *  - create dummy ifnet
 	 */
-	sc->info.es_nports = B53_NUM_PHYS;
-	strcpy(sc->info.es_name, "Broadcom 53xx switch");
-	sc->info.es_nvlangroups = 16;
-	sc->info.es_vlan_caps = 0;
-	sc->info.es_vlan_caps = ETHERSWITCH_VLAN_DOT1Q | ETHERSWITCH_VLAN_PORT;
 
-	for (i = 0; i < B53_NUM_PHYS - 1; i++) {
+	for (i = 0; i < sc->info.es_nports; i++) {
 		sc->ifp[i] = if_alloc(IFT_ETHER);
 		sc->ifp[i]->if_softc = sc;
 		sc->ifp[i]->if_flags |= IFF_UP | IFF_BROADCAST | IFF_DRV_RUNNING
@@ -218,9 +246,9 @@ b53_attach(device_t dev)
 			BMSR_DEFCAPMASK, i, MII_OFFSET_ANY, 0);
 
 		if (err != 0) {
-			device_printf(dev, "attaching PHY %d failed\n", i);
-			/* TODO: cleanup */
-			return (err);
+			device_printf(dev, "attaching PHY %d failed: %d\n", i,
+			    err);
+			goto fail;
 		}
 	}
 
@@ -233,18 +261,10 @@ b53_attach(device_t dev)
 	b53mii_tick(sc);
 	B53_UNLOCK(sc);
 
-	for(int i = 1; i < 4; i++) {
-		struct etherswitch_vlangroup 	vg;
-
-		vg.es_vlangroup = i;
-		err = b53switch_getvgroup(dev, &vg);
-		device_printf(dev, "[%d] err=%d; members=%x untagged=%x\n", i,
-				err,
-				vg.es_member_ports,
-				vg.es_untagged_ports);
-	}
-
 	return (0);
+fail:
+	/* TODO: detach */
+	return (ENXIO);
 }
 
 /**************** MII interface - delegate to parents **********************/
@@ -393,6 +413,34 @@ b53chip_reset(device_t dev)
 	return (err);
 }
 
+int
+b53chip_enable_fw(device_t dev, uint32_t forward)
+{
+	struct b53_softc	*sc;
+	uint32_t		 reg;
+	int 			 err;
+
+	sc = device_get_softc(dev);
+
+	err = b53chip_op(sc, SWITCH_MODE, &reg, 0);
+	if (err) {
+		device_printf(dev, "enable_fw: can't read SWITCH_MODE reg\n");
+		return (err);
+	}
+	if (forward == 0)
+		reg &= ~SWITCH_MODE_FORWARDING_ENABLED;
+	else
+		reg |= SWITCH_MODE_FORWARDING_ENABLED;
+
+	err = b53chip_op(sc, SWITCH_MODE, &reg, 1);
+	if (err) {
+		device_printf(dev, "enable_fw: can't set SWITCH_MODE reg\n");
+		return (err);
+	}
+
+	return 0;
+}
+
 /****************** EtherSwitch interface **********************************/
 static etherswitch_info_t*
 b53switch_getinfo(device_t dev)
@@ -403,7 +451,7 @@ b53switch_getinfo(device_t dev)
 	return &(sc->info);
 }
 
-static void
+void
 b53switch_lock(device_t dev)
 {
         struct b53_softc *sc;
@@ -414,7 +462,7 @@ b53switch_lock(device_t dev)
         B53_LOCK(sc);
 }
 
-static void
+void
 b53switch_unlock(device_t dev)
 {
         struct b53_softc *sc;
@@ -425,7 +473,7 @@ b53switch_unlock(device_t dev)
         B53_UNLOCK(sc);
 }
 
-static int
+int
 b53switch_getport(device_t dev, etherswitch_port_t *p)
 {
 	struct b53_softc	*sc;
@@ -457,7 +505,7 @@ b53switch_getport(device_t dev, etherswitch_port_t *p)
 	return (0);
 }
 
-static int
+int
 b53switch_setport(device_t dev, etherswitch_port_t *p)
 {
 	struct b53_softc	*sc;
@@ -485,7 +533,7 @@ b53switch_setport(device_t dev, etherswitch_port_t *p)
 	return (ifmedia_ioctl(mii->mii_ifp, &p->es_ifr, ifm, SIOCSIFMEDIA));
 }
 
-static int
+int
 b53switch_getvgroup(device_t dev, etherswitch_vlangroup_t *vg)
 {
 	struct b53_softc	*sc;
@@ -505,7 +553,7 @@ b53switch_getvgroup(device_t dev, etherswitch_vlangroup_t *vg)
 	return (err);
 }
 
-static int
+int
 b53switch_setvgroup(device_t dev, etherswitch_vlangroup_t *vg)
 {
 	struct b53_softc	*sc;
@@ -522,43 +570,7 @@ b53switch_setvgroup(device_t dev, etherswitch_vlangroup_t *vg)
 			vg->es_untagged_ports,
 			vg->es_fid);
 	return (err);
-//	error = b53switch_write4(sc, VLAN_TABLE_INDX_5395, vid);
-//	if (error) {
-//		device_printf(dev, "can't write to VLAN_TABLE_INDX_5395 reg: %d\n",  error);
-//		return (error);
-//	}
-//	error = b53switch_write4(sc, VLAN_TABLE_ACCESS_5395,
-//	    VLAN_TABLE_ACCESS_5395_RUN |VLAN_TABLE_ACCESS_5395_READ);
-//	if (error){
-//		device_printf(dev, "can't write to VLAN_TABLE_ACCESS_5395 reg: %d\n",  error);
-//		return (error);
-//	}
-//
-//	error = b53switch_op(sc, VLAN_TABLE_ENTRY_5395, &reg, 0);
-//	if (error){
-//		device_printf(dev, "can't read to VLAN_TABLE_ENTRY_5395 reg: %d\n",  error);
-//		return (error);
-//	}
 
-//	error = b53switch_write4(sc, VLAN_TABLE_INDX_5350, vid);
-//	if (error) {
-//		device_printf(dev, "can't write to VLAN_TABLE_INDX_5395 reg: %d\n",  error);
-//		return (error);
-//	}
-//	error = b53switch_write4(sc, VLAN_TABLE_ACCESS_5350,
-//	    VLAN_TABLE_ACCESS_5395_RUN |VLAN_TABLE_ACCESS_5395_READ);
-//	if (error){
-//		device_printf(dev, "can't write to VLAN_TABLE_ACCESS_5395 reg: %d\n",  error);
-//		return (error);
-//	}
-//
-//	error = b53switch_op(sc, VLAN_TABLE_ENTRY_5350, &reg, 0);
-//	if (error){
-//		device_printf(dev, "can't read to VLAN_TABLE_ENTRY_5395 reg: %d\n",  error);
-//		return (error);
-//	}
-//
-//	device_printf(dev, "REG = 0x%x\n", reg);
 }
 
 /****************** ifmedia callbacks **************************************/
@@ -616,7 +628,6 @@ static device_method_t b53_methods [] =
 	DEVMETHOD(etherswitch_getvgroup,	b53switch_getvgroup),
 	DEVMETHOD(etherswitch_setvgroup,	b53switch_setvgroup),
 #if 0
-	DEVMETHOD(etherswitch_setvgroup,	b53sxxhal_setvgroup),
 	DEVMETHOD(etherswitch_readreg,		b53switch_readreg_wrapper),
 	DEVMETHOD(etherswitch_writereg,		b53switch_writereg_wrapper),
 	DEVMETHOD(etherswitch_readphyreg,	b53switch_readphy_wrapper),
