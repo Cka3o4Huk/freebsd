@@ -34,7 +34,7 @@
 
 extern struct b53_hal b5325_hal;	/* BCM5325 */
 extern struct b53_hal b5358_hal;	/* BCM5358 */
-extern struct b53_hal b53115_hal;	/* BCM5395/53115/53118; 5397?/5398? */
+extern struct b53_hal b53115_hal;	/* BCM5395/53115/53118/53125?; 5397?/5398? */
 
 void		b53hal_init(struct b53_softc *sc);
 

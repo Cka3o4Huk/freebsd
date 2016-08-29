@@ -44,14 +44,16 @@
 #include <dev/etherswitch/etherswitch.h>
 #include <dev/mii/mii.h>
 
-#define	B53_NUM_PHYS	6
+#define	B53_NUM_PHYS	9
+#define	B53_DEF_VLANID	1
+#define B53_DEF_MASK	0x11e
 
 MALLOC_DECLARE(M_BCMSWITCH);
 
 struct b53_softc;
 struct b53_hal;
 
-#define	B53HALSIZE		5
+#define	B53HALSIZE		6
 
 typedef void (*voidfunctype) (void);
 
@@ -60,6 +62,7 @@ struct b53_functions {
 		struct {
 			int (* reset) (struct b53_softc *sc);
 			/* VLAN functions */
+			int (* vlan_enable) (struct b53_softc *sc, int on);
 			int (* vlan_get_pvid) (struct b53_softc *sc, int port,
 			    int *pvid);
 			int (* vlan_set_pvid) (struct b53_softc *sc, int port,
@@ -111,7 +114,42 @@ uint32_t	b53chip_read4(struct b53_softc *sc, uint32_t reg);
 int		b53chip_write4(struct b53_softc *sc, uint32_t reg, uint32_t val);
 int		b53chip_op(struct b53_softc *sc, uint32_t reg, uint32_t *res,
 		    int is_write);
+
+/* Etherswitch interface */
+void		b53switch_lock(device_t dev);
+void		b53switch_unlock(device_t dev);
+int		b53switch_getvgroup(device_t dev, etherswitch_vlangroup_t *vg);
+int		b53switch_setvgroup(device_t dev, etherswitch_vlangroup_t *vg);
+int		b53switch_getport(device_t dev, etherswitch_port_t *p);
+int		b53switch_setport(device_t dev, etherswitch_port_t *p);
+
+#define B53_RD(_reg, _val, _sc)						\
+	do { 								\
+		int	b53_err; 					\
+		b53_err = b53chip_op(_sc, _reg, &_val, 0);		\
+		if (b53_err) {						\
+			device_printf(_sc->sc_dev, "can't read"		\
+			    " " #_reg ", err: %d\n", b53_err);		\
+			return (b53_err);				\
+		}							\
+	} while (0);
+
+#define B53_WR(_reg, _val, _sc)						\
+	do { 								\
+		int	b53_err; 					\
+		b53_err = b53chip_op(_sc, _reg, &_val, 1);		\
+		if (b53_err) {						\
+			device_printf(_sc->sc_dev, "can't write"	\
+			    " " #_reg ", err: %d\n", b53_err);		\
+			return (b53_err);				\
+		}							\
+	} while (0);
+
 /* Chip operations */
 int		b53chip_reset(device_t dev);
+
+/* Common chip actions: */
+/*	- enable/disable forwarding */
+int		b53chip_enable_fw(device_t dev, uint32_t forward);
 
 #endif /* _B53_VAR_H_ */
