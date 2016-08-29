@@ -64,6 +64,7 @@ struct dwc_softc {
 	int			mii_clk;
 	device_t		miibus;
 	struct mii_data *	mii_softc;
+	device_t		miiproxy;
 	struct ifnet		*ifp;
 	int			if_flags;
 	struct mtx		mtx;
