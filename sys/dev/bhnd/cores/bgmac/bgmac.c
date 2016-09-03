@@ -162,11 +162,6 @@ bgmac_attach(device_t dev)
 	sc = device_get_softc(dev);
 	sc->dev = dev;
 
-	/*
-	 * FIXME: move to hints
-	 */
-	bus_set_resource(dev, SYS_RES_IRQ, 0, 4, 1);
-
 	/* Allocate bus resources */
 	error = bus_alloc_resources(dev, bgmac_rspec, res);
 	if (error){
