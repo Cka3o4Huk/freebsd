@@ -35,12 +35,15 @@ __FBSDID("$FreeBSD$");
 #include <sys/kernel.h>
 #include <sys/bus.h>
 #include <sys/module.h>
+#include <sys/rman.h>
+#include <sys/malloc.h>
 
 #include <machine/bus.h>
-#include <sys/rman.h>
 #include <machine/resource.h>
 
 #include <dev/bhnd/bhnd.h>
+
+#include <dev/bhnd/bcma/bcma_dmp.h>
 
 #include "bcm_mips74kreg.h"
 
@@ -50,6 +53,9 @@ __FBSDID("$FreeBSD$");
  * These cores are only found on bcma(4) chipsets, allowing
  * us to assume the availability of bcma interrupt registers.
  */
+
+#define	BHND_MIPS74K_IRQN	5
+#define	BHND_MIPS74K_IRQBASE	2
 
 static const struct bhnd_device bcm_mips74k_devs[] = {
 	BHND_DEVICE(MIPS, MIPS74K, NULL, NULL, BHND_DF_SOC),
@@ -80,6 +86,12 @@ static int
 bcm_mips74k_attach(device_t dev)
 {
 	struct bcm_mips74k_softc *sc;
+	device_t		*children;
+	uint32_t		 tmp;
+	uint32_t 		 intmasks[BHND_MIPS74K_IRQN];
+	int			 error;
+	int 			 offset, count;
+	int			 i, j;
 
 	sc = device_get_softc(dev);
 	sc->dev = dev;
@@ -94,6 +106,58 @@ bcm_mips74k_attach(device_t dev)
 	/* Route MIPS timer to IRQ5 */
 	bus_write_4(sc->mem_res, BCM_MIPS74K_INTR5_SEL,
 	    (1<<BCM_MIPS74K_TIMER_IVEC));
+
+	/* Use intmask0-4 to identify mapping IRQ to cores */
+	offset = BCM_MIPS74K_INTR0_SEL;
+
+	/* scan IRQ masks of lines */
+	for (i = 0; i < BHND_MIPS74K_IRQN; i++) {
+		intmasks[i] = bus_read_4(sc->mem_res, offset);
+		offset += sizeof(uint32_t);
+	}
+
+	error = device_get_children(device_get_parent(dev), &children,
+	    &count);
+
+	if (error) {
+		BHND_ERROR_DEV(dev, "can't get list of BHND devices: %d",
+		    error);
+		return (error);
+	}
+
+	for (i = 0; i < count; i++) {
+		error = bhnd_read_config(children[i],
+		    BCMA_DMP_OOBSELOUTA30, &tmp, sizeof(uint32_t));
+		if (error != 0) {
+			BHND_INFO_DEV(children[i],
+			    "can't read out-of-band A30: %d", error);
+			continue;
+		}
+
+		if (tmp == 0)
+			continue;
+
+		/* filter bits by LINE mask */
+		tmp &= 0x1f;
+		/* calculate bitmask according to line number */
+		tmp = (1 << tmp);
+
+		/* try find line in IRQ bit masks */
+		for (j = 0; j < BHND_MIPS74K_IRQN; j++) {
+			if ((intmasks[j] & tmp) == 0)
+				continue;
+
+			BHND_INFO_DEV(dev, "%s: IRQ %d as rid 0",
+			    bhnd_get_device_name(children[i]),
+			    BHND_MIPS74K_IRQBASE + j);
+
+			bus_set_resource(children[i], SYS_RES_IRQ, 0,
+			    BHND_MIPS74K_IRQBASE + j, 1);
+
+			break;
+		}
+	}
+	free(children, M_TEMP);
 
 	return (0);
 }
