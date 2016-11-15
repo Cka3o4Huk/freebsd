@@ -25,6 +25,9 @@ makeoptions	MODULES_OVERRIDE=""
 
 options 	DDB
 options 	KDB
+options		KTR
+options		KTR_ENTRIES=8192
+options		KTR_MASK=(0)
 
 options 	SCHED_4BSD		#4BSD scheduler
 options 	INET			#InterNETworking
