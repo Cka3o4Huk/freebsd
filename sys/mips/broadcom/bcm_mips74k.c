@@ -51,7 +51,6 @@ __FBSDID("$FreeBSD$");
 
 #include "bcm_mips74kreg.h"
 
-
 /*
  * Broadcom MIPS74K Core
  *
@@ -61,11 +60,6 @@ __FBSDID("$FreeBSD$");
 
 #define	BHND_MIPS74K_IRQN	5
 #define	BHND_MIPS74K_IRQBASE	2
-
-static const struct resource_spec mipscore_rspec[MIPSCORE_MAX_RSPEC] = {
-	{ SYS_RES_MEMORY,	0,	RF_ACTIVE },
-	{ -1, -1, 0 }
-};
 
 static const struct bhnd_device bcm_mips74k_devs[] = {
 	BHND_DEVICE(MIPS, MIPS74K, NULL, NULL, BHND_DF_SOC),
@@ -96,11 +90,9 @@ static int
 bcm_mips74k_attach(device_t dev)
 {
 	struct bcm_mips74k_softc *sc;
-	struct resource 	*res;
 	device_t		*children;
 	uint32_t		 tmp;
 	uint32_t 		 intmasks[BHND_MIPS74K_IRQN];
-	uint16_t		 devid;
 	int			 error;
 	int 			 offset, count;
 	int			 i, j;
@@ -120,11 +112,11 @@ bcm_mips74k_attach(device_t dev)
 	    (1<<BCM_MIPS74K_TIMER_IVEC));
 
 	/* Use intmask0-4 to identify mapping IRQ to cores */
-	offset = offsetof(struct mipscore_regs, intmask[0]);
+	offset = BCM_MIPS74K_INTR0_SEL;
 
 	/* scan IRQ masks of lines */
 	for (i = 0; i < BHND_MIPS74K_IRQN; i++) {
-		intmasks[i] = bus_read_4(res, offset);
+		intmasks[i] = bus_read_4(sc->mem_res, offset);
 		offset += sizeof(uint32_t);
 	}
 
@@ -138,8 +130,14 @@ bcm_mips74k_attach(device_t dev)
 	}
 
 	for (i = 0; i < count; i++) {
-		tmp = bhnd_read_config(children[i],
-		    BCMA_DMP_OOBSELOUTA30, sizeof(uint32_t));
+		error = bhnd_read_config(children[i],
+		    BCMA_DMP_OOBSELOUTA30, &tmp, sizeof(uint32_t));
+		if (error != 0) {
+			BHND_INFO_DEV(children[i],
+			    "can't read out-of-band A30: %d", error);
+			continue;
+		}
+
 		if (tmp == 0)
 			continue;
 
