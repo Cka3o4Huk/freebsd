@@ -129,8 +129,8 @@ bcm_mips74k_attach(device_t dev)
 		error = bhnd_read_config(children[i],
 		    BCMA_DMP_OOBSELOUTA30, &tmp, sizeof(uint32_t));
 		if (error != 0) {
-			BHND_INFO_DEV(children[i],
-			    "can't read out-of-band A30: %d", error);
+			BHND_INFO_DEV(dev,
+			    "can't read out-of-band A30 for [%d]: %d", i, error);
 			continue;
 		}
 
