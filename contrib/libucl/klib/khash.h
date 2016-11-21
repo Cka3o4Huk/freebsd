@@ -147,7 +147,11 @@ typedef unsigned long long khint64_t;
 #ifdef _MSC_VER
 #define kh_inline __inline
 #else
+#ifdef __mips__
+#define kh_inline
+#else
 #define kh_inline inline
+#endif
 #endif
 #endif /* kh_inline */
 
