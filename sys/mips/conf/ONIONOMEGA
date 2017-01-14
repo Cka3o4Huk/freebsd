@@ -53,3 +53,5 @@ device          geom_map
 
 # Boot off of the rootfs, as defined in the geom_map setup.
 options 	ROOTDEVNAME=\"ufs:map/rootfs.uzip\"
+
+device		gpioths
