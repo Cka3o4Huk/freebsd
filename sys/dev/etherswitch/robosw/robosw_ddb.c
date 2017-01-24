@@ -47,18 +47,18 @@ __FBSDID("$FreeBSD$");
 #include <ddb/ddb.h>
 #include <ddb/db_lex.h>
 
-#include "b53_var.h"
-#include "b53_reg.h"
+#include "robosw_var.h"
+#include "robosw_reg.h"
 
-#ifdef B53PRINT
-#undef B53PRINT
+#ifdef ROBOSWPRINT
+#undef ROBOSWPRINT
 #endif
-#define	B53PRINT(dev)		db_printf(
+#define	ROBOSWPRINT(dev)		db_printf(
 
-static struct command_table db_b53_table = LIST_HEAD_INITIALIZER(db_t4_table);
-_DB_SET(_show, b53, NULL, db_show_table, 0, &db_b53_table);
+static struct command_table db_robosw_table = LIST_HEAD_INITIALIZER(db_t4_table);
+_DB_SET(_show, robosw, NULL, db_show_table, 0, &db_robosw_table);
 
-DB_FUNC(read, db_show_b53read, db_b53_table, CS_OWN, NULL)
+DB_FUNC(read, db_show_roboswread, db_robosw_table, CS_OWN, NULL)
 {
 	device_t	dev;
 	uint32_t	reg;
@@ -80,14 +80,14 @@ DB_FUNC(read, db_show_b53read, db_b53_table, CS_OWN, NULL)
 
 	if (init)
 		db_printf("0x%x: 0x%x\n", reg,
-		    b53chip_read4(device_get_softc(dev), reg));
+		    robosw_read4(device_get_softc(dev), reg));
 	else
-		db_printf("usage: show b53 read <b53device> <reg>\n");
+		db_printf("usage: show robosw read <robosw> <reg>\n");
 
 	return;
 }
 
-DB_FUNC(write, db_show_b53write, db_b53_table, CS_OWN, NULL)
+DB_FUNC(write, db_show_roboswwrite, db_robosw_table, CS_OWN, NULL)
 {
 	device_t	dev;
 	uint32_t	reg;
@@ -115,16 +115,16 @@ DB_FUNC(write, db_show_b53write, db_b53_table, CS_OWN, NULL)
 	db_skip_to_eol();
 
 	if (init)
-		b53chip_write4(device_get_softc(dev), reg, val);
+		robosw_write4(device_get_softc(dev), reg, val);
 	else
-		db_printf("usage: show b53 write <b53device> <register> "
+		db_printf("usage: show robosw write <robosw> <register> "
 		    "<value>\n");
 	return;
 }
 
-DB_FUNC(dump, db_show_b53dump, db_b53_table, CS_OWN, NULL)
+DB_FUNC(dump, db_show_roboswdump, db_robosw_table, CS_OWN, NULL)
 {
-	struct b53_softc	*sc;
+	struct robosw_softc	*sc;
 	device_t		 dev;
 	int			 t;
 
@@ -138,14 +138,14 @@ DB_FUNC(dump, db_show_b53dump, db_b53_table, CS_OWN, NULL)
 
 	if (dev != NULL) {
 		sc = device_get_softc(dev);
-		B53DUMP;
+		ROBOSWDUMP;
 	} else
-		db_printf("usage: show b53 dump <b53device>\n");
+		db_printf("usage: show robosw dump <robosw>\n");
 
 	return;
 }
 
-DB_FUNC(reset, db_show_b53reset, db_b53_table, CS_OWN, NULL)
+DB_FUNC(reset, db_show_roboswreset, db_robosw_table, CS_OWN, NULL)
 {
 	device_t		 dev;
 	int			 t;
@@ -159,9 +159,9 @@ DB_FUNC(reset, db_show_b53reset, db_b53_table, CS_OWN, NULL)
 	db_skip_to_eol();
 
 	if (dev != NULL)
-		b53chip_reset(dev);
+		robosw_reset(dev);
 	else
-		db_printf("usage: show b53 reset <b53device>\n");
+		db_printf("usage: show robosw reset <robosw>\n");
 
 	return;
 }

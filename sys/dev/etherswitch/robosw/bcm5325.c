@@ -39,34 +39,34 @@ __FBSDID("$FreeBSD$");
 #include <sys/errno.h>
 #include <sys/bus.h>
 
-#include "b53_var.h"
-#include "b53_reg.h"
-#include "b53_hal.h"
+#include "robosw_var.h"
+#include "robosw_reg.h"
+#include "robosw_hal.h"
 
-static int	b5325hal_get_port_pvid(struct b53_softc *sc, int port, int *pvid);
-static int	b5325hal_set_port_pvid(struct b53_softc *sc, int port, int pvid);
-static int	b5325hal_reset(struct b53_softc *sc);
+static int	bcm5325_get_port_pvid(struct robosw_softc *sc, int port, int *pvid);
+static int	bcm5325_set_port_pvid(struct robosw_softc *sc, int port, int pvid);
+static int	bcm5325_reset(struct robosw_softc *sc);
 
-struct b53_functions b5325_f = {
-	.reset = b5325hal_reset,
-	.vlan_get_pvid = b5325hal_get_port_pvid,
-	.vlan_set_pvid = b5325hal_set_port_pvid
+struct robosw_functions bcm5325_f = {
+	.api.reset = bcm5325_reset,
+	.api.vlan_get_pvid = bcm5325_get_port_pvid,
+	.api.vlan_set_pvid = bcm5325_set_port_pvid
 	/* TODO: add VLAN getter/setter */
 };
 
-struct b53_hal	b5325_hal = {
+struct robosw_hal bcm5325_hal = {
 	.parent = NULL,
-	.own = &b5325_f
+	.self = &bcm5325_f
 };
 
 static int
-b5325hal_reset(struct b53_softc *sc)
+bcm5325_reset(struct robosw_softc *sc)
 {
 	int		err;
 	uint32_t	reg;
 
 	/* MII port state override (page 0 register 14) */
-	err = b53chip_op(sc, PORTMII_STATUS_OVERRIDE, &reg, 0);
+	err = robosw_op(sc, PORTMII_STATUS_OVERRIDE, &reg, 0);
 
 	if (err) {
 		device_printf(sc->sc_dev, "Unable to set RvMII mode\n");
@@ -78,9 +78,9 @@ b5325hal_reset(struct b53_softc *sc)
 	{
 		/* Enable RvMII */
 		reg |= PORTMII_STATUS_REVERSE_MII;
-		b53chip_write4(sc, PORTMII_STATUS_OVERRIDE, reg);
+		robosw_write4(sc, PORTMII_STATUS_OVERRIDE, reg);
 		/* Read back */
-		err = b53chip_op(sc, PORTMII_STATUS_OVERRIDE, &reg, 0);
+		err = robosw_op(sc, PORTMII_STATUS_OVERRIDE, &reg, 0);
 		if (err || !(reg & PORTMII_STATUS_REVERSE_MII))
 		{
 			device_printf(sc->sc_dev, "Unable to set RvMII mode\n");
@@ -92,11 +92,11 @@ b5325hal_reset(struct b53_softc *sc)
 }
 
 static int
-b5325hal_get_port_pvid(struct b53_softc *sc, int port, int *pvid)
+bcm5325_get_port_pvid(struct robosw_softc *sc, int port, int *pvid)
 {
 	int	local_pvid;
 
-	local_pvid = b53chip_read4(sc, VLAN_DEFAULT_PORT_TAG(port));
+	local_pvid = robosw_read4(sc, VLAN_DEFAULT_PORT_TAG(port));
 	if (local_pvid < 0)
 		return (EBUSY);
 
@@ -105,7 +105,7 @@ b5325hal_get_port_pvid(struct b53_softc *sc, int port, int *pvid)
 }
 
 int
-b5325hal_set_port_pvid(struct b53_softc *sc, int port, int pvid)
+bcm5325_set_port_pvid(struct robosw_softc *sc, int port, int pvid)
 {
 
 	if (port > (sc->info.es_nports - 1))
@@ -114,5 +114,5 @@ b5325hal_set_port_pvid(struct b53_softc *sc, int port, int pvid)
 	if (pvid > 0xfff)
 		return (EINVAL);
 
-	return (b53chip_write4(sc, VLAN_DEFAULT_PORT_TAG(port), pvid));
+	return (robosw_write4(sc, VLAN_DEFAULT_PORT_TAG(port), pvid));
 }
