@@ -25,8 +25,8 @@
  *
  * $FreeBSD$
  */
-#ifndef _B53SWITCHIDS_H_
-#define _B53SWITCHIDS_H_
+#ifndef _ROBOSWIDS_H_
+#define _ROBOSWIDS_H_
 
 #define	BCM5325			0x00005325
 #define	BCM53115		0x00053115

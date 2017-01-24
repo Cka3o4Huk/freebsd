@@ -27,15 +27,15 @@
  * $FreeBSD$
  */
 
-#ifndef _B53_HAL_H_
-#define _B53_HAL_H_
+#ifndef _ROBOSW_HAL_H_
+#define _ROBOSW_HAL_H_
 
-#include "b53_var.h"
+#include "robosw_var.h"
 
-extern struct b53_hal b5325_hal;	/* BCM5325 */
-extern struct b53_hal b5358_hal;	/* BCM5358 */
-extern struct b53_hal b53115_hal;	/* BCM5395/53115/53118/53125?; 5397?/5398? */
+extern struct robosw_hal bcm5325_hal;	/* BCM5325 */
+extern struct robosw_hal bcm5358_hal;	/* BCM5358 */
+extern struct robosw_hal bcm53115_hal;	/* BCM5395/53115/53118/53125?; 5397?/5398? */
 
-void		b53hal_init(struct b53_softc *sc);
+void	robosw_hal_init(struct robosw_softc *sc);
 
-#endif /* _B53_HAL_H_ */
+#endif /* _ROBOSW_HAL_H_ */
