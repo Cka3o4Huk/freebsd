@@ -152,6 +152,7 @@ typedef unsigned long long khint64_t;
 #else
 #define kh_inline inline
 #endif
+#endif
 #endif /* kh_inline */
 
 #ifndef kh_unused
