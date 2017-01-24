@@ -27,8 +27,8 @@
  * $FreeBSD$
  */
 
-#ifndef _B53_VAR_H_
-#define _B53_VAR_H_
+#ifndef _ROBOSW_VAR_H_
+#define _ROBOSW_VAR_H_
 
 #include <sys/param.h>
 #include <sys/malloc.h>
@@ -44,48 +44,45 @@
 #include <dev/etherswitch/etherswitch.h>
 #include <dev/mii/mii.h>
 
-#define	B53_NUM_PHYS	9
-#define	B53_DEF_VLANID	1
-#define B53_DEF_MASK	0x11e
+#define	ROBOSW_NUM_PHYS	9
+#define	ROBOSW_DEF_VLANID	1
+#define ROBOSW_DEF_MASK	0x11e
 
 MALLOC_DECLARE(M_BCMSWITCH);
 
-struct b53_softc;
-struct b53_hal;
-
-#define	B53HALSIZE		6
+#define	ROBOSWHALSIZE		6
 
 typedef void (*voidfunctype) (void);
 
-struct b53_functions {
+struct robosw_softc;
+struct robosw_hal;
+
+struct robosw_api {
+	int (* reset) (struct robosw_softc *sc);
+
+	/* VLAN functions */
+	int (* vlan_enable)   (struct robosw_softc *sc, int on);
+	int (* vlan_get_pvid) (struct robosw_softc *sc, int port, int *pvid);
+	int (* vlan_set_pvid) (struct robosw_softc *sc, int port, int pvid);
+	int (* vlan_get_vlan_group) (struct robosw_softc *sc, int vlan_group,
+	    int *vlan_id, int *members, int *untagged, int *forward_id);
+	int (* vlan_set_vlan_group) (struct robosw_softc *sc, int vlan_group,
+	    int vlan_id, int members, int untagged, int forward_id);
+};
+
+struct robosw_functions {
 	union{
-		struct {
-			int (* reset) (struct b53_softc *sc);
-			/* VLAN functions */
-			int (* vlan_enable) (struct b53_softc *sc, int on);
-			int (* vlan_get_pvid) (struct b53_softc *sc, int port,
-			    int *pvid);
-			int (* vlan_set_pvid) (struct b53_softc *sc, int port,
-			    int pvid);
-			int (* vlan_get_vlan_group) (struct b53_softc *sc,
-			    int vlan_group, int *vlan_id, int *members,
-			    int *untagged, int *forward_id);
-			int (* vlan_set_vlan_group) (struct b53_softc *sc,
-			    int vlan_group, int vlan_id, int members,
-			    int untagged, int forward_id);
-		};
-		voidfunctype func[B53HALSIZE];
+		struct robosw_api	api;
+		voidfunctype		func[ROBOSWHALSIZE];
 	};
 };
 
-struct b53_hal;
-
-struct b53_hal {
-	struct b53_hal		*parent;
-	struct b53_functions	*own;
+struct robosw_hal {
+	struct robosw_hal	*parent;
+	struct robosw_functions	*self;
 };
 
-struct b53_softc {
+struct robosw_softc {
 	struct mtx	 sc_mtx;		/* serialize access to softc */
 	device_t	 sc_dev;
 	device_t	 sc_parent;
@@ -95,61 +92,61 @@ struct b53_softc {
 	int		 numports;	/* number of ports */
 	int		 ifpport[MII_NPHY];
 	int		*portphy;
-	char		*ifname[B53_NUM_PHYS];
-	device_t	 miibus[B53_NUM_PHYS];
-	struct ifnet	*ifp[B53_NUM_PHYS];
+	char		*ifname[ROBOSW_NUM_PHYS];
+	device_t	 miibus[ROBOSW_NUM_PHYS];
+	struct ifnet	*ifp[ROBOSW_NUM_PHYS];
 	struct callout	 callout_tick;
 
-	struct b53_functions	hal;
+	struct robosw_functions	hal;
 	struct etherswitch_info	info;
 };
 
-#define B53_LOCK(_sc)			mtx_lock(&(_sc)->sc_mtx)
-#define B53_UNLOCK(_sc)			mtx_unlock(&(_sc)->sc_mtx)
-#define B53_LOCK_ASSERT(_sc, _what)	mtx_assert(&(_sc)->sc_mtx, (_what))
-#define B53_TRYLOCK(_sc)		mtx_trylock(&(_sc)->sc_mtx)
+#define ROBOSW_LOCK(_sc)			mtx_lock(&(_sc)->sc_mtx)
+#define ROBOSW_UNLOCK(_sc)			mtx_unlock(&(_sc)->sc_mtx)
+#define ROBOSW_LOCK_ASSERT(_sc, _what)	mtx_assert(&(_sc)->sc_mtx, (_what))
+#define ROBOSW_TRYLOCK(_sc)		mtx_trylock(&(_sc)->sc_mtx)
 
 /* Read/write access to SWITCH registers via PSEUDO PHY */
-uint32_t	b53chip_read4(struct b53_softc *sc, uint32_t reg);
-int		b53chip_write4(struct b53_softc *sc, uint32_t reg, uint32_t val);
-int		b53chip_op(struct b53_softc *sc, uint32_t reg, uint32_t *res,
+uint32_t	robosw_read4(struct robosw_softc *sc, uint32_t reg);
+int		robosw_write4(struct robosw_softc *sc, uint32_t reg, uint32_t val);
+int		robosw_op(struct robosw_softc *sc, uint32_t reg, uint32_t *res,
 		    int is_write);
 
 /* Etherswitch interface */
-void		b53switch_lock(device_t dev);
-void		b53switch_unlock(device_t dev);
-int		b53switch_getvgroup(device_t dev, etherswitch_vlangroup_t *vg);
-int		b53switch_setvgroup(device_t dev, etherswitch_vlangroup_t *vg);
-int		b53switch_getport(device_t dev, etherswitch_port_t *p);
-int		b53switch_setport(device_t dev, etherswitch_port_t *p);
+void		robosw_lock(device_t dev);
+void		robosw_unlock(device_t dev);
+int		robosw_getvgroup(device_t dev, etherswitch_vlangroup_t *vg);
+int		robosw_setvgroup(device_t dev, etherswitch_vlangroup_t *vg);
+int		robosw_getport(device_t dev, etherswitch_port_t *p);
+int		robosw_setport(device_t dev, etherswitch_port_t *p);
 
-#define B53_RD(_reg, _val, _sc)						\
+#define ROBOSW_RD(_reg, _val, _sc)						\
 	do { 								\
-		int	b53_err; 					\
-		b53_err = b53chip_op(_sc, _reg, &_val, 0);		\
-		if (b53_err) {						\
+		int	robosw_err; 					\
+		robosw_err = robosw_op(_sc, _reg, &_val, 0);		\
+		if (robosw_err) {						\
 			device_printf(_sc->sc_dev, "can't read"		\
-			    " " #_reg ", err: %d\n", b53_err);		\
-			return (b53_err);				\
+			    " " #_reg ", err: %d\n", robosw_err);		\
+			return (robosw_err);				\
 		}							\
 	} while (0);
 
-#define B53_WR(_reg, _val, _sc)						\
+#define ROBOSW_WR(_reg, _val, _sc)						\
 	do { 								\
-		int	b53_err; 					\
-		b53_err = b53chip_op(_sc, _reg, &_val, 1);		\
-		if (b53_err) {						\
+		int	robosw_err; 					\
+		robosw_err = robosw_op(_sc, _reg, &_val, 1);		\
+		if (robosw_err) {						\
 			device_printf(_sc->sc_dev, "can't write"	\
-			    " " #_reg ", err: %d\n", b53_err);		\
-			return (b53_err);				\
+			    " " #_reg ", err: %d\n", robosw_err);		\
+			return (robosw_err);				\
 		}							\
 	} while (0);
 
 /* Chip operations */
-int		b53chip_reset(device_t dev);
+int	robosw_reset(device_t dev);
 
 /* Common chip actions: */
 /*	- enable/disable forwarding */
-int		b53chip_enable_fw(device_t dev, uint32_t forward);
+int	robosw_enable_fw(device_t dev, uint32_t forward);
 
-#endif /* _B53_VAR_H_ */
+#endif /* _ROBOSW_VAR_H_ */

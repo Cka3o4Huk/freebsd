@@ -27,12 +27,11 @@
  * $FreeBSD$
  */
 
-
 #include <sys/cdefs.h>
 __FBSDID("$FreeBSD$");
 
 /*
- * HAL routines for Broadcom 53xx ethernet switch
+ * HAL routines for Broadcom RoboSwitch / 53xx ethernet switch
  */
 #include <sys/param.h>
 #include <sys/kernel.h>
@@ -45,44 +44,43 @@ __FBSDID("$FreeBSD$");
 #include "bhnd_bus_if.h"
 #endif
 
-#include "b53_reg.h"
-#include "b53_hal.h"
+#include "robosw_reg.h"
+#include "robosw_hal.h"
 
-struct b53hal_mapping {
-	uint32_t	 id;
-	struct b53_hal	*hal;
+struct robosw_hal_mapping {
+	uint32_t		 id;
+	struct robosw_hal	*hal;
 };
 
-static struct b53hal_mapping integrated_ids[] = {
-	{0x5358, &b5358_hal},
-	{0x5357, &b5358_hal},
-	{53572, &b5358_hal},
+static struct robosw_hal_mapping integrated_ids[] = {
+	{0x5358, 	&bcm5358_hal},
+	{0x5357, 	&bcm5358_hal},
+	{53572,		&bcm5358_hal},
+	{0, 		NULL}
+};
+
+static struct robosw_hal_mapping outband_ids[] = {
+	{0x53115,	&bcm53115_hal},
+	{0x53125,	&bcm53115_hal},	/* BananaPiR1 SWITCH_DEVICEID=00053125*/
 	{0, NULL}
 };
 
-static struct b53hal_mapping outband_ids[] = {
-	{0x53115, &b53115_hal},
-	{0x53125, &b53115_hal}, 	/* BananaPiR1 SWITCH_DEVICEID=00053125*/
-	{0, NULL}
-};
-
-static struct b53_hal *	b53hal_lookup(struct b53_softc *sc);
+static struct robosw_hal *	robosw_hal_lookup(struct robosw_softc *sc);
 
 void
-b53hal_init(struct b53_softc *sc)
+robosw_hal_init(struct robosw_softc *sc)
 {
-	struct b53_functions	*scfunc;
-	struct b53_hal		*inithal;
-	struct b53_functions	*initfunc;
+	struct robosw_functions		*scfunc, *initfunc;
+	struct robosw_hal		*inithal;
 
-	inithal = b53hal_lookup(sc);
+	inithal = robosw_hal_lookup(sc);
 
 	scfunc = &sc->hal;
 	for (;;) {
-		initfunc = inithal->own;
+		initfunc = inithal->self;
 
 		/* inherit functions from initial HAL */
-		for (int i = 0; i < B53HALSIZE; i++)
+		for (int i = 0; i < ROBOSWHALSIZE; i++)
 			if (scfunc->func[i] == NULL)
 				scfunc->func[i] = initfunc->func[i];
 
@@ -94,20 +92,20 @@ b53hal_init(struct b53_softc *sc)
 	}
 }
 
-static struct b53_hal *
-b53hal_lookup(struct b53_softc *sc)
+static struct robosw_hal *
+robosw_hal_lookup(struct robosw_softc *sc)
 {
 #ifdef WITH_BHND
 	const struct bhnd_chipid	*chip;
 #endif
-	struct b53hal_mapping 		*ptr;
+	struct robosw_hal_mapping	*ptr;
 	char				*map_type;
 	uint32_t 		 	 switchid;
 	int				 err;
 	device_t			 dev;
 
 	dev = sc->sc_dev;
-	err = b53chip_op(sc, SWITCH_DEVICEID, &switchid, 0);
+	err = robosw_op(sc, SWITCH_DEVICEID, &switchid, 0);
 	if (err || switchid == 0) {
 		/* assume integrated etherswitch */
 #ifdef WITH_BHND
@@ -131,5 +129,5 @@ b53hal_lookup(struct b53_softc *sc)
 
 	/* HAL isn't found in mapping, use default */
 	device_printf(dev, "found default switch BCM5325\n");
-	return (&b5325_hal);
+	return (&bcm5325_hal);
 }
