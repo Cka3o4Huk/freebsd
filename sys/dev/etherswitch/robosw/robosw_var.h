@@ -86,6 +86,8 @@ struct robosw_softc {
 	struct mtx	 sc_mtx;		/* serialize access to softc */
 	device_t	 sc_dev;
 	device_t	 sc_parent;
+	int		 sc_full_reset;	/* see possible values below */
+	int		 sc_debug; 	/* debug */
 	int		 media;		/* cpu port media */
 	int		 cpuport;	/* which PHY is connected to the CPU */
 	int		 phymask;	/* PHYs we manage */
@@ -96,10 +98,15 @@ struct robosw_softc {
 	device_t	 miibus[ROBOSW_NUM_PHYS];
 	struct ifnet	*ifp[ROBOSW_NUM_PHYS];
 	struct callout	 callout_tick;
-
 	struct robosw_functions	hal;
 	struct etherswitch_info	info;
 };
+
+/* full reset possible values */
+#define	ROBOSW_NORESET		0	/* 0b00 - not required/supported */
+#define	ROBOSW_TRYRESET		1	/* 0b01 - try reset */
+#define	ROBOSW_RESETDONE	2	/* 0b10 - reset done */
+#define	ROBOSW_RESETFAIL	3	/* 0b11 - reset failed */
 
 #define ROBOSW_LOCK(_sc)			mtx_lock(&(_sc)->sc_mtx)
 #define ROBOSW_UNLOCK(_sc)			mtx_unlock(&(_sc)->sc_mtx)
