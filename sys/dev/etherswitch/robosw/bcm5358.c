@@ -39,8 +39,10 @@ static int	bcm5358_get_vlan_group(struct robosw_softc *sc, int vlan_group,
 		    int *vlan_id, int *members, int *untagged, int *forward_id);
 static int	bcm5358_set_vlan_group(struct robosw_softc *sc, int vlan_group,
 		    int vlan_id, int members, int untagged, int forward_id);
+static int	bcm5358_noreset(struct robosw_softc *sc);
 
 struct robosw_functions bcm5358_f = {
+	.api.reset = bcm5358_noreset,
 	.api.vlan_get_vlan_group = bcm5358_get_vlan_group,
 	.api.vlan_set_vlan_group = bcm5358_set_vlan_group
 };
@@ -49,6 +51,15 @@ struct robosw_hal bcm5358_hal = {
 	.parent = &bcm5325_hal,
 	.self = &bcm5358_f
 };
+
+static int
+bcm5358_noreset(struct robosw_softc *sc)
+{
+
+	/* Reset is unsupported */
+	sc->sc_full_reset = ROBOSW_NORESET;
+	return (0);
+}
 
 static int
 bcm5358_get_vlan_group(struct robosw_softc *sc, int vlan_group,
