@@ -118,13 +118,11 @@ static int
 robosw_attach(device_t dev)
 {
 	struct robosw_softc	*sc;
-	int			 i, err, is_robosw_reset;
+	int			 i, err;
 	char 			 name[IFNAMSIZ];
 #if 0
 	uint32_t		 reg;
 #endif
-
-	is_robosw_reset = 1;
 
 	sc = device_get_softc(dev);
 	sc->sc_dev = dev;
@@ -132,6 +130,8 @@ robosw_attach(device_t dev)
 
 	if (sc->sc_parent == NULL)
 		return (ENXIO);
+	sc->sc_full_reset = ROBOSW_TRYRESET;
+	sc->sc_debug = bootverbose;
 
 	mtx_init(&sc->sc_mtx, "robosw", NULL, MTX_DEF);
 
@@ -151,9 +151,7 @@ robosw_attach(device_t dev)
 		goto fail;
 	}
 
-	/* Last step before chip operations */
-	if (bootverbose)
-		ROBOSWDUMP;
+	ROBOSWDUMP;
 
 	/* Turn off forwarding - start manipulations with rules/routes */
 	err = robosw_enable_fw(dev, 0);
@@ -166,8 +164,9 @@ robosw_attach(device_t dev)
 	 * XXX: Avoid default configuration, bootloader must set it or we
 	 * must load user defined
 	 */
-	if (is_robosw_reset & robosw_reset(dev))
+	if (robosw_reset(dev)) {
 		device_printf(dev, "reset failed\n");
+	}
 
 	if (sc->hal.api.reset != NULL) {
 		sc->hal.api.reset(sc);
@@ -301,7 +300,7 @@ robosw_mii_pollstat(struct robosw_softc *sc)
 
 /*************** SWITCH register access via PSEUDO PHY over MII ************/
 int
-robosw_op(struct robosw_softc *sc, uint32_t reg, uint32_t *res, int is_write)
+robosw_op(struct robosw_softc *sc, uint32_t reg, uint32_t *res, int op)
 {
 	uint64_t 	val;
 	uint8_t		len, page;
@@ -311,7 +310,7 @@ robosw_op(struct robosw_softc *sc, uint32_t reg, uint32_t *res, int is_write)
 	if (res == NULL)
 		return (EINVAL);
 
-	val  = (is_write) ? *res : 0;
+	val  = (op == ROBOSW_WRITEOP) ? *res : 0;
 	len  = (ROBOSW_UNSHIFT(reg, ROBOSW_LEN) + 1) / 2; /* in halfword */
 	page =  ROBOSW_UNSHIFT(reg, ROBOSW_PAGE);
 	reg  =  ROBOSW_UNSHIFT(reg, ROBOSW_REG);
@@ -320,7 +319,7 @@ robosw_op(struct robosw_softc *sc, uint32_t reg, uint32_t *res, int is_write)
 	tmp = ROBOSW_SHIFT(page, ACCESS_CONTROL_PAGE) | ACCESS_CONTROL_RW;
 	ROBOSW_WRITEREG(ROBOSW_ACCESS_CONTROL_REG, tmp);
 
-	if (is_write)
+	if (op == ROBOSW_WRITEOP)
 		for (i = 0; i < len; i++) {
 			data_reg = ROBOSW_DATA_REG_BASE + i;
 			data_val = (uint16_t)((val >> (16*i)) & 0xffff);
@@ -328,7 +327,7 @@ robosw_op(struct robosw_softc *sc, uint32_t reg, uint32_t *res, int is_write)
 		}
 
 	tmp = ROBOSW_SHIFT(reg, RW_CONTROL_ADDR);
-	tmp|= (is_write) ? RW_CONTROL_WRITE : RW_CONTROL_READ;
+	tmp|= (op == ROBOSW_WRITEOP) ? RW_CONTROL_WRITE : RW_CONTROL_READ;
 	ROBOSW_WRITEREG(ROBOSW_RW_CONTROL_REG, tmp);
 
 	/* is operation finished? */
@@ -345,7 +344,7 @@ robosw_op(struct robosw_softc *sc, uint32_t reg, uint32_t *res, int is_write)
 	}
 
 	/* get result */
-	if (is_write == 0) {
+	if (op == ROBOSW_READOP) {
 		for (i = 0; i < len; i++)
 			val |= (ROBOSW_READREG(ROBOSW_DATA_REG_BASE + i)) << (16*i);
 		*res = val & UINT32_MAX;
@@ -397,6 +396,11 @@ robosw_reset(device_t dev)
 	int			 err;
 
 	sc = device_get_softc(dev);
+
+	if (sc->sc_full_reset != ROBOSW_TRYRESET) {
+		device_printf(dev, "reset: skipped (%d)\n", sc->sc_full_reset);
+		return (0);
+	}
 
 	err = robosw_write4(sc, SWITCH_RESET, 0xffff);
 	if (err) {
