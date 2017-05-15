@@ -1,0 +1,122 @@
+#
+# $FreeBSD$
+#
+# The Broadcom 33xx series of processors and boards is very commonly
+# used in Cable modems hardware including the Thomson TCW770
+#
+
+ident		BCM33xx
+cpu		CPU_MIPS4KC
+machine		mips mips
+hints		"BCM33xx.hints"
+files		"../broadcom/files.broadcom"
+
+#
+# --------------  Debug bits -----------------------
+# 
+options 	ALT_BREAK_TO_DEBUGGER
+options 	BREAK_TO_DEBUGGER
+options		BOOTVERBOSE=1
+
+# Debugging for use in -current
+#options 	DEADLKRES
+options 	INVARIANTS
+options 	INVARIANT_SUPPORT
+
+makeoptions	TRAMPLOADADDR=0x80900000
+makeoptions	DEBUG="-g3"		#Build kernel with gdb(1) debug symbols
+makeoptions	MODULES_OVERRIDE=""
+
+options 	DDB
+options 	KDB
+options		KTR
+options		KTR_ENTRIES=8192
+options		KTR_MASK=(0)
+
+#options 	BUS_DEBUG
+#makeoptions	BUS_DEBUG
+#options	VERBOSE_SYSINIT
+#makeoptions	VERBOSE_SYSINIT
+
+#
+# ------------------- End --------------------------
+# 
+
+#Kernel
+options 	SCHED_4BSD		#4BSD scheduler
+options 	INET			#InterNETworking
+options 	TCP_HHOOK		# hhook(9) framework for TCP
+options 	PSEUDOFS		#Pseudo-filesystem framework
+options 	_KPOSIX_PRIORITY_SCHEDULING #Posix P1003_1B real-time extensions
+
+makeoptions	INTRNG
+options		INTRNG
+
+#Filesystem
+options         FFS                     #Berkeley Fast Filesystem
+options         SOFTUPDATES             #Enable FFS soft updates support
+options         UFS_ACL                 #Support for access control lists
+options         UFS_DIRHASH             #Improve performance on big directories
+
+device		geom_uzip
+options		GEOM_UZIP
+options		GEOM_LABEL		# Providers labelization.
+options		ROOTDEVNAME=\"ufs:ufs/FBSD\"	# assumes FW built by 
+					# freebsd-build-wifi
+
+#BHND
+options		BHND_LOGLEVEL=BHND_TRACE_LEVEL
+#options 	EARLY_PRINTF
+
+# bhnd(4)
+device		bhnd
+#device		bcma			# bcma backplane
+#device		bcma_nexus
+
+device		pci
+device		bhnd_pcib		# PCIe-G1 core
+
+# Flash
+device		spibus
+device		mx25l			# Serial Flash
+device		cfi			# Parallel Flash
+device		cfid
+
+#UART
+device		uart
+
+#Base
+device		loop
+device		ether
+device 		random
+device		md
+
+#Performance
+#options 	HWPMC_HOOKS
+#device		hwpmc
+#device	 	hwpmc_mips4k
+
+#Ethernet
+# device 	bfe			# XXX will build both pci and siba
+device		bgmac
+device 		miibus			# attachments
+device		mdio
+device		etherswitch
+device		bpf
+device		vlan
+
+#NVRAM
+device		nvram2env
+
+# USB
+options 	USB_DEBUG			# enable debug msgs
+options 	USB_EHCI_BIG_ENDIAN_DESC        # handle big-endian byte order
+options 	USB_HOST_ALIGN=32		# 
+
+device		usb				# USB Bus (required)
+device		ohci				# OHCI interface
+device		ehci				# EHCI interface (USB 2.0)
+
+device		scbus
+device		umass
+device		da
