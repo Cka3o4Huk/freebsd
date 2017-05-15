@@ -41,6 +41,7 @@ __FBSDID("$FreeBSD$");
 #include <stddef.h>
 #include <unistd.h>
 #include <pthread.h>
+#include <sys/sysctl.h>
 #include "un-namespace.h"
 
 #include "libc_private.h"
@@ -49,6 +50,7 @@ void
 abort(void)
 {
 	struct sigaction act;
+	int debug = 1;
 
 	/*
 	 * POSIX requires we flush stdio buffers on abort.
@@ -56,6 +58,8 @@ abort(void)
 	 */
 	if (__cleanup)
 		(*__cleanup)();
+
+	sysctlbyname("debug.kdb.enter", NULL, NULL, &debug, sizeof(debug));
 
 	sigfillset(&act.sa_mask);
 	/*
