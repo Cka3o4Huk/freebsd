@@ -120,6 +120,7 @@ static void	bgmac_intr(void *arg);
 static int	bgmac_get_config(struct bgmac_softc *sc);
 
 /* chip manipulations */
+static int	bgmac_chip_force_init(struct bgmac_softc *sc);
 static void	bgmac_chip_start_txrx(struct bgmac_softc * sc);
 static void	bgmac_chip_stop_txrx(struct bgmac_softc * sc);
 static void	bgmac_chip_set_macaddr(struct bgmac_softc * sc);
@@ -172,8 +173,6 @@ bgmac_attach(device_t dev)
 	sc->mem = res[0];
 	sc->irq = res[1];
 
-	BGMACDUMP(sc);
-
 	error = bgmac_get_config(sc);
 	if (error) {
 		BHND_ERROR_DEV(dev, "can't get bgmac config from NVRAM: %d",
@@ -181,7 +180,7 @@ bgmac_attach(device_t dev)
 		return (ENXIO);
 	}
 
-	bgmac_chip_set_macaddr(sc);
+	BGMACDUMP(sc);
 
 	/*
 	 * Hook interrupt
@@ -196,9 +195,46 @@ bgmac_attach(device_t dev)
 		return (error);
 	}
 
+	error = bgmac_chip_force_init(sc);
+	if (error) {
+		BHND_ERROR_DEV(dev, "can't init GMAC chip %x", error);
+		/*
+		 * TODO: cleanup / detach
+		 */
+		return (error);
+	}
+
+	bgmac_if_setup(dev);
+	BGMAC_LOCK_INIT(sc);
+
+	/* Attach MDIO bus to discover ethernet switch */
+	sc->mdio = device_add_child(dev, "mdio", -1);
+	bus_generic_attach(dev);
+
+	return 	0;
+}
+
+static int
+bgmac_chip_force_init(struct bgmac_softc *sc)
+{
+	int			 error;
+	uint32_t		 tmp;
+
+	tmp = bus_read_4(sc->mem, BGMAC_REG_CMD_CFG);
+	bus_write_4(sc->mem, BGMAC_REG_CMD_CFG, tmp | BGMAC_REG_CMD_CFG_RESET);
+	/* hope it's enough for reset */
+	DELAY(100);
+
+	bgmac_chip_set_macaddr(sc);
+
+	if (sc->dma != NULL) {
+		bcm_dma_detach(sc->dma);
+		sc->dma = NULL;
+	}
+
 	sc->dma = malloc(sizeof(struct bcm_dma), M_BHND_BGMAC, M_WAITOK);
 	if (sc->dma == NULL) {
-		BHND_ERROR_DEV(dev, "can't allocate memory for bcm_dma");
+		BHND_ERROR_DEV(sc->dev, "can't allocate memory for bcm_dma");
 		/*
 		 * TODO: cleanup
 		 */
@@ -212,12 +248,14 @@ bgmac_attach(device_t dev)
 	BHND_TRACE_DEV(sc->dev, "clear bgmac_intr_status: 0x%x", intr_status);
 
 	/* Flow control - on/off and pause */
+	/*
 	bus_write_4(sc->mem, BGMAC_FLOW_CTL_THRESH, 0x03cb04cb);
 	bus_write_4(sc->mem, BGMAC_PAUSE_CTL, 0x27fff);
+	*/
 
-	error = bcm_dma_attach(dev, sc->mem, sc->dma);
+	error = bcm_dma_attach(sc->dev, sc->mem, sc->dma);
 	if (error) {
-		BHND_ERROR_DEV(dev, "error occurred during bcm_dma_attach: %d",
+		BHND_ERROR_DEV(sc->dev, "error occurred during bcm_dma_attach: %d",
 		    error);
 		/*
 		 * TODO: cleanup
@@ -225,14 +263,10 @@ bgmac_attach(device_t dev)
 		return (error);
 	}
 
-	bgmac_if_setup(dev);
-	BGMAC_LOCK_INIT(sc);
+	tmp = bus_read_4(sc->mem, BGMAC_REG_CMD_CFG);
+	bus_write_4(sc->mem, BGMAC_REG_CMD_CFG, tmp & ~BGMAC_REG_CMD_CFG_RESET);
 
-	/* Attach MDIO bus to discover ethernet switch */
-	sc->mdio = device_add_child(dev, "mdio", -1);
-	bus_generic_attach(dev);
-
-	return 	0;
+	return (0);
 }
 
 static void
@@ -257,6 +291,13 @@ bgmac_chip_set_intr_mask(struct bgmac_softc *sc, enum bgmac_intr_status st)
 	bus_write_4(sc->mem, BGMAC_REG_INTERRUPT_MASK, mask);
 	feed = bus_read_4(sc->mem, BGMAC_REG_INTERRUPT_MASK);
 	BHND_TRACE_DEV(sc->dev, "bgmac_intr: 0x%x", feed);
+}
+
+void
+bgmac_reset(struct bgmac_softc *sc)
+{
+
+	bgmac_chip_set_cmdcfg(sc, 0);
 }
 
 static void
@@ -577,7 +618,12 @@ bgmac_intr(void *arg)
 	if (intr_status & BGMAC_REG_INTR_STATUS_ERR_OVER) {
 		BHND_ERROR_DEV(sc->dev, "Overflow!");
 		BGMACDUMP(sc);
+		BGMACDUMPMIB(sc);
+		BGMACDUMPERRORS(sc);
 		bcm_dma_rx(sc->dma->rx);
+		BGMACDUMP(sc);
+		BGMACDUMPMIB(sc);
+		BGMACDUMPERRORS(sc);
 		intr_status &= ~BGMAC_REG_INTR_STATUS_ERR_OVER;
 	}
 
