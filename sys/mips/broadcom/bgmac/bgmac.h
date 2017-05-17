@@ -114,7 +114,8 @@ bgmac_decode_ctl(uint32_t val)
 	BGMACDUMPREG(sc,BGMAC_FLOW_CTL_THRESH);				\
 	BGMACDUMPREG(sc,BGMAC_PAUSE_CTL);				\
 	BGMACDUMPREG(sc,BGMAC_REG_TXQ_CTL);				\
-	BGMACDUMPREG(sc,BGMAC_REG_RXQ_CTL);
+	BGMACDUMPREG(sc,BGMAC_REG_RXQ_CTL);				\
+	BGMACDUMPREG(sc,BGMAC_CLOCK_CONTROL_ST);
 
 #define BGMACDUMPMIB(sc)						\
 	BGMACDUMPREG(sc,BGMAC_MIB_TX_BYTES);				\
@@ -122,6 +123,8 @@ bgmac_decode_ctl(uint32_t val)
 	BGMACDUMPREG(sc,BGMAC_MIB_TX_DEFERED);				\
 	BGMACDUMPREG(sc,BGMAC_MIB_TX_Q0_PKTS);				\
 	BGMACDUMPREG(sc,BGMAC_MIB_TX_Q0_OCTETS);			\
+	BGMACDUMPREG(sc,BGMAC_MIB_RX_GOOD_BYTES);			\
+	BGMACDUMPREG(sc,BGMAC_MIB_RX_GOOD_PCKTS);			\
 	BGMACDUMPREG(sc,BGMAC_MIB_RX_BYTES);				\
 	BGMACDUMPREG(sc,BGMAC_MIB_RX_PCKTS);
 
@@ -141,5 +144,6 @@ bgmac_decode_ctl(uint32_t val)
 	BGMACDUMPREG(sc,BGMAC_MIB_RX_ERR_SYMBOL);
 
 void	bgmac_if_start(struct ifnet *ifp);
+void	bgmac_reset(struct bgmac_softc *sc);
 
 #endif /* _BGMAC_H_ */
