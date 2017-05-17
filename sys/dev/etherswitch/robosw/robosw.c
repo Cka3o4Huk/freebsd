@@ -402,7 +402,7 @@ robosw_reset(device_t dev)
 		return (0);
 	}
 
-	err = robosw_write4(sc, SWITCH_RESET, 0xffff);
+	err = robosw_write4(sc, SWITCH_RESET, 0xff);
 	if (err) {
 		device_printf(dev, "reset: can't set reset bits\n");
 		return (err);
