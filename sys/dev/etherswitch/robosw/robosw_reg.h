@@ -227,7 +227,9 @@
 #define		IP_MULTICAST_ENABLE		0x01
 
 #define	IO_MUX_CTL			(S2 | PAGE(0x00) | 0x22)
-#define	SWITCH_RESET			(S2 | PAGE(0x00) | 0x79)
+#define	SWITCH_RESET			(S1 | PAGE(0x00) | 0x79)
+#define		SWITCH_RESET_ON			0x80
+#define		SWITCH_RESET_ENABLE		0x10
 
 #define	LINK_STATUS_SUMMARY		(S2 | PAGE(0x01) | 0x00)
 #define	LINK_STATUS_CHANGE_RC		(S2 | PAGE(0x01) | 0x02)
