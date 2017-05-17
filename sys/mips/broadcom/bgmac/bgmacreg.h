@@ -145,6 +145,8 @@ enum bgmac_intr_status
 #define	BGMAC_MIB_TX_Q3_OCTETS				0x3a4
 #define	BGMAC_MIB_TX_Q3_OCTETS_HIGH			0x3a8
 
+#define BGMAC_MIB_RX_GOOD_BYTES				0x3b0
+#define BGMAC_MIB_RX_GOOD_PCKTS				0x3b8
 #define	BGMAC_MIB_RX_BYTES				0x3bc
 #define	BGMAC_MIB_RX_PCKTS				0x3c4
 #define	BGMAC_MIB_RX_ERR_JABBER_PCKTS			0x3f8	/* Error */
@@ -155,6 +157,9 @@ enum bgmac_intr_status
 #define	BGMAC_MIB_RX_ERR_CRC				0x410	/* Error */
 #define	BGMAC_MIB_RX_ERR_ALIGN				0x414	/* Error */
 #define	BGMAC_MIB_RX_ERR_SYMBOL				0x418	/* Error */
+#define BGMAC_MIB_RX_PAUSE				0x41c
+#define BGMAC_MIB_RX_NONPAUSE				0x420
+
 
 #define	BGMAC_REG_CMD_CFG			0x808
 #define		BGMAC_REG_CMD_CFG_TX		0x00000001
