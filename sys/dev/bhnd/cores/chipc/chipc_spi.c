@@ -118,6 +118,8 @@ chipc_spi_attach(device_t dev)
 		goto failed;
 	}
 
+	if ((error = bus_generic_probe(dev)))
+		goto failed;
 	/* Let spibus perform full attach before we try to call
 	 * BUS_ADD_CHILD() */
 	if ((error = bus_generic_attach(dev)))
@@ -186,7 +188,7 @@ chipc_spi_add_child(device_t dev, u_int order, const char *name, int unit)
 	child = bus_generic_add_child(dev, order, name, unit);
 
 	if (child != NULL && strcmp(device_get_name(child), "nvram2env") == 0)
-		device_set_ivars(child, sc->sc_res);
+		device_set_ivars(child, sc->sc_flash_res);
 
 	return (child);
 }
