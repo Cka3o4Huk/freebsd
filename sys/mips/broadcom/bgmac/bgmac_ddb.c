@@ -60,13 +60,13 @@ __FBSDID("$FreeBSD$");
 static struct command_table db_bgmac_table = LIST_HEAD_INITIALIZER(db_t4_table);
 _DB_SET(_show, bgmac, NULL, db_show_table, 0, &db_bgmac_table);
 
-/*
-DB_FUNC(read, db_show_b53read, db_bgmac_table, CS_OWN, NULL)
+DB_FUNC(read, db_show_bgmacread, db_bgmac_table, CS_OWN, NULL)
 {
-	device_t	dev;
-	uint32_t	reg;
-	int		t;
-	int		init;
+	struct bgmac_softc	*sc;
+	device_t		 dev;
+	uint32_t		 reg;
+	int			 t;
+	int			 init;
 
 	init = 0;
 	t = db_read_token();
@@ -81,23 +81,24 @@ DB_FUNC(read, db_show_b53read, db_bgmac_table, CS_OWN, NULL)
 
 	db_skip_to_eol();
 
-	if (init)
-		db_printf("0x%x: 0x%x\n", reg,
-		    b53chip_read4(device_get_softc(dev), reg));
+	if (init) {
+		sc = device_get_softc(dev);
+		db_printf("0x%x: 0x%x\n", reg, bus_read_4(sc->mem, reg));
+	}
 	else
-		db_printf("usage: show b53 read <b53device> <reg>\n");
+		db_printf("usage: show bgmac read <bgmac_device> <reg>\n");
 
 	return;
 }
 
-DB_FUNC(write, db_show_b53write, db_b53_table, CS_OWN, NULL)
+DB_FUNC(write, db_show_bgmacwrite, db_bgmac_table, CS_OWN, NULL)
 {
-	device_t	dev;
-	uint32_t	reg;
-	uint32_t	val;
-
-	int		t;
-	int		init;
+	struct bgmac_softc	*sc;
+	device_t		 dev;
+	uint32_t		 reg;
+	uint32_t		 val;
+	int			 t;
+	int			 init;
 
 	init = 0;
 
@@ -117,14 +118,15 @@ DB_FUNC(write, db_show_b53write, db_b53_table, CS_OWN, NULL)
 
 	db_skip_to_eol();
 
-	if (init)
-		b53chip_write4(device_get_softc(dev), reg, val);
+	if (init) {
+		sc = device_get_softc(dev);
+		bus_write_4(sc->mem, reg, val);
+	}
 	else
-		db_printf("usage: show b53 write <b53device> <register> "
+		db_printf("usage: show bgmac write <bgmac_device> <register> "
 		    "<value>\n");
 	return;
 }
-*/
 
 DB_FUNC(dump, db_show_bgmacdump, db_bgmac_table, CS_OWN, NULL)
 {
@@ -151,8 +153,7 @@ DB_FUNC(dump, db_show_bgmacdump, db_bgmac_table, CS_OWN, NULL)
 	return;
 }
 
-/*
-DB_FUNC(reset, db_show_b53reset, db_b53_table, CS_OWN, NULL)
+DB_FUNC(reset, db_show_bgmacreset, db_bgmac_table, CS_OWN, NULL)
 {
 	device_t		 dev;
 	int			 t;
@@ -166,11 +167,10 @@ DB_FUNC(reset, db_show_b53reset, db_b53_table, CS_OWN, NULL)
 	db_skip_to_eol();
 
 	if (dev != NULL)
-		b53chip_reset(dev);
+		bgmac_reset(device_get_softc(dev));
 	else
-		db_printf("usage: show b53 reset <b53device>\n");
+		db_printf("usage: show bgmac reset <bgmac_device>\n");
 
 	return;
 }
-*/
 #endif
