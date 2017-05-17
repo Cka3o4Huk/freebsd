@@ -42,7 +42,7 @@ __FBSDID("$FreeBSD$");
 
 #include <machine/bus.h>
 
-#define	BHND_LOGGING	BHND_INFO_LEVEL
+#define	BHND_LOGGING	BHND_DEBUG_LEVEL
 #include <dev/bhnd/bhnd_debug.h>
 
 #include "bgmacvar.h"
@@ -299,6 +299,7 @@ bcm_dma_ring_load(struct bcm_dma_ring *dr)
 	uint32_t 	addrext, ring32, value;
 	uint32_t 	trans;
 	device_t	dev;
+	int		i;
 
 	dev = rman_get_device(dr->res);
 	trans = 0;
@@ -309,11 +310,29 @@ bcm_dma_ring_load(struct bcm_dma_ring *dr)
 		ring64 = (uint64_t)(dr->dr_ring_dmabase);
 		BHND_DEBUG_DEV(dev, "dr_ring_dmabase: 0x%jx\n", ring64);
 
+		/* try to suspend DMA code */
+		BCM_DMA_WRITE(dr, BCM_DMA_CTL, BCM_DMA_CTL_SUSPEND);
+		i = 10;
+		do {
+			DELAY(30);
+			value = BCM_DMA_READ(dr, BCM_DMA64_STATUS);
+			value = (value && BCM_DMA64_STATE) >> BCM_DMA64_STATE_SHIFT;
+		} while (value != BCM_DMA_STAT_DISABLED &&
+			 value != BCM_DMA_STAT_IDLEWAIT &&
+			 value != BCM_DMA_STAT_STOPPED && --i);
+		BHND_DEBUG_DEV(dev, "dr_ring_dmabase: susp %i %x\n", i, value);
+		/* try to off DMA code */
 		BCM_DMA_WRITE(dr, BCM_DMA_CTL, 0);
-		DELAY(30);
+		i = 10;
+		do {
+			DELAY(300);
+			value = BCM_DMA_READ(dr, BCM_DMA64_STATUS);
+			value = (value && BCM_DMA64_STATE) >> BCM_DMA64_STATE_SHIFT;
+		} while (value != BCM_DMA_STAT_DISABLED && --i);
+		BHND_DEBUG_DEV(dev, "dr_ring_dmabase: off %i %x\n", i, value);
 
 		addrext = ((ring64 >> 32) & BCM_DMA_ADDR_MASK) >> 30;
-		value = (dr->dr_is_tx) ? 0 :
+		value = (dr->dr_is_tx) ? BCM_DMA_CTL_LOOPBACK :
 			    BCM_DMA_SHIFT(dr->dr_frameoffset, BCM_DMA_CTL_RXFROFF);
 		value |= BCM_DMA_CTL_ENABLE;
 		value |= BCM_DMA_CTL_PARITYDISABLE;
