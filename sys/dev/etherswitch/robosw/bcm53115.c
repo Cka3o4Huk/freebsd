@@ -57,19 +57,10 @@ struct robosw_hal bcm53115_hal = {
 static int
 bcm53115_reset(struct robosw_softc *sc)
 {
-	int		err;
 	uint32_t	reg;
 
-	/* MII port state override (page 0 register 14) */
-	err = robosw_op(sc, PORTMII_STATUS_OVERRIDE, &reg, 0);
-
-	if (err) {
-		device_printf(sc->sc_dev, "Unable to set RvMII mode\n");
-		return (ENXIO);
-	}
-
-	robosw_write4(sc, PORTMII_STATUS_OVERRIDE, reg |
-	    PORTMII_STATUS_FORCE_1000M | PORTMII_STATUS_FORCE_LINK );
+	reg = GLOBAL_MGMT_CTL_MGMT_PORT_MII;
+	ROBOSW_WR(GLOBAL_MGMT_CTL, reg, sc);
 
 	return (0);
 }
