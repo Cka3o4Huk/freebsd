@@ -69,25 +69,15 @@ bcm_dma_attach(device_t dev, struct resource *res, struct bcm_dma *dma)
 		goto fail;
 	}
 
-	dma->wme[0] = bcm_dma_ring_alloc(dma, res, 0, 1, dma->dmatype);
-	if (!dma->wme[0]) {
-		/* TODO: add cleanup */
-		error = ENXIO;
-		goto fail;
+	for (int i = 0; i < 4; i++) {
+		dma->wme[i] = bcm_dma_ring_alloc(dma, res, i, 1, dma->dmatype);
+		if (!dma->wme[i]) {
+			/* TODO: add cleanup */
+			error = ENXIO;
+			goto fail;
+		}
 	}
 
-//	dma->wme[WME_AC_BE] = bcm_dma_ringsetup(mac, 1, 1, dma->dmatype);
-//	if (!dma->wme[WME_AC_BE])
-//		goto fail3;
-//
-//	dma->wme[WME_AC_VI] = bcm_dma_ringsetup(mac, 2, 1, dma->dmatype);
-//	if (!dma->wme[WME_AC_VI])
-//		goto fail4;
-//
-//	dma->wme[WME_AC_VO] = bcm_dma_ringsetup(mac, 3, 1, dma->dmatype);
-//	if (!dma->wme[WME_AC_VO])
-//		goto fail5;
-//
 //	dma->mcast = bcm_dma_ringsetup(mac, 4, 1, dma->dmatype);
 //	if (!dma->mcast)
 //		goto fail6;
@@ -95,10 +85,10 @@ bcm_dma_attach(device_t dev, struct resource *res, struct bcm_dma *dma)
 	/* setup RX DMA channel. */
 	bcm_dma_ring_load(dma->rx);
 	/* setup TX DMA channels. */
-	bcm_dma_ring_load(dma->wme[0]);
-//	bcm_dma_ring_load(dma->wme[WME_AC_BE]);
-//	bcm_dma_ring_load(dma->wme[WME_AC_VI]);
-//	bcm_dma_ring_load(dma->wme[WME_AC_VO]);
+	for (int i = 0; i < 4; i++) {
+		bcm_dma_ring_load(dma->wme[i]);
+	}
+
 //	bcm_dma_ring_load(dma->mcast);
 
 	return (0);
