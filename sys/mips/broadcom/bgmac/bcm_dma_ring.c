@@ -332,7 +332,7 @@ bcm_dma_ring_load(struct bcm_dma_ring *dr)
 		BHND_DEBUG_DEV(dev, "dr_ring_dmabase: off %i %x\n", i, value);
 
 		addrext = ((ring64 >> 32) & BCM_DMA_ADDR_MASK) >> 30;
-		value = (dr->dr_is_tx) ? BCM_DMA_CTL_LOOPBACK :
+		value = (dr->dr_is_tx) ? 0 :
 			    BCM_DMA_SHIFT(dr->dr_frameoffset, BCM_DMA_CTL_RXFROFF);
 		value |= BCM_DMA_CTL_ENABLE;
 		value |= BCM_DMA_CTL_PARITYDISABLE;
