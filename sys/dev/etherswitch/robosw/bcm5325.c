@@ -46,11 +46,13 @@ __FBSDID("$FreeBSD$");
 static int	bcm5325_get_port_pvid(struct robosw_softc *sc, int port, int *pvid);
 static int	bcm5325_set_port_pvid(struct robosw_softc *sc, int port, int pvid);
 static int	bcm5325_reset(struct robosw_softc *sc);
+static int	bcm5325_vlan_enable(struct robosw_softc *sc, int on);
 
 struct robosw_functions bcm5325_f = {
 	.api.reset = bcm5325_reset,
 	.api.vlan_get_pvid = bcm5325_get_port_pvid,
-	.api.vlan_set_pvid = bcm5325_set_port_pvid
+	.api.vlan_set_pvid = bcm5325_set_port_pvid,
+	.api.vlan_enable = bcm5325_vlan_enable
 	/* TODO: add VLAN getter/setter */
 };
 
@@ -115,4 +117,47 @@ bcm5325_set_port_pvid(struct robosw_softc *sc, int port, int pvid)
 		return (EINVAL);
 
 	return (robosw_write4(sc, VLAN_DEFAULT_PORT_TAG(port), pvid));
+}
+
+static int
+bcm5325_vlan_enable(struct robosw_softc *sc, int on)
+{
+	uint32_t	ctl0, ctl1, drop, ctl4, ctl5, sw;
+
+	drop = 0;
+
+	ROBOSW_RD(VLAN_GLOBAL_CTL0, ctl0, sc);
+	ROBOSW_RD(VLAN_GLOBAL_CTL1, ctl1, sc);
+
+	device_printf(sc->sc_dev, "ctl <=: %x/%x/%x/%x\n", ctl0, ctl1, ctl4,
+	    ctl5);
+
+	if (on) {
+		ctl0 |= VLAN_GLOBAL_CTL0_1Q_ENABLE |
+			    VLAN_GLOBAL_CTL0_MATCH_VIDMAC |
+			    VLAN_GLOBAL_CTL0_HASH_VIDADDR;
+		ctl1 |= VLAN_GLOBAL_CTL1_MCAST_UNTAGMAP_CHECK |
+			    VLAN_GLOBAL_CTL1_MCAST_FWDMAP_CHECK;
+		ctl4 |= VLAN_GLOBAL_CTL4_DROP_VID_VIOLATION;
+		ctl5 |= VLAN_GLOBAL_CTL5_DROP_VTAB_MISS;
+	} else {
+		ctl0 &= ~(VLAN_GLOBAL_CTL0_1Q_ENABLE |
+			    VLAN_GLOBAL_CTL0_MATCH_VIDMAC |
+			    VLAN_GLOBAL_CTL0_HASH_VIDADDR);
+		ctl1 &= ~(VLAN_GLOBAL_CTL1_MCAST_UNTAGMAP_CHECK |
+			    VLAN_GLOBAL_CTL1_MCAST_FWDMAP_CHECK);
+		ctl5 &= ~VLAN_GLOBAL_CTL5_DROP_VTAB_MISS;
+
+	}
+
+	device_printf(sc->sc_dev, "ctl =>: %x/%x/%x/%x\n", ctl0, ctl1, ctl4,
+	    ctl5);
+
+	ROBOSW_WR(VLAN_GLOBAL_CTL0, ctl0, sc);
+	ROBOSW_WR(VLAN_GLOBAL_CTL1, ctl1, sc);
+
+	ROBOSW_RD(SWITCH_MODE, sw, sc);
+	sw &= ~SWITCH_MODE_MANAGED;
+	ROBOSW_WR(SWITCH_MODE, sw, sc);
+	return (0);
 }
