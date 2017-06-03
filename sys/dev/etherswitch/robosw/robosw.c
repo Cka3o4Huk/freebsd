@@ -139,7 +139,7 @@ robosw_attach(device_t dev)
 	strcpy(sc->info.es_name, "Broadcom RoboSwitch");
 	sc->info.es_nvlangroups = 16;
 	sc->info.es_vlan_caps = 0;
-	sc->info.es_vlan_caps = ETHERSWITCH_VLAN_DOT1Q | ETHERSWITCH_VLAN_PORT;
+	sc->info.es_vlan_caps = ETHERSWITCH_VLAN_PORT;
 
 	/* Initialize HAL by switch ID and chipcommon ID */
 	robosw_hal_init(sc);
@@ -173,10 +173,15 @@ robosw_attach(device_t dev)
 		/* TODO: if (err) add detach */
 	}
 
-	/* Enable VLAN support */
-	sc->hal.api.vlan_enable(sc, 1);
-	sc->hal.api.vlan_set_vlan_group(sc, ROBOSW_DEF_VLANID, ROBOSW_DEF_VLANID,
-	    ROBOSW_DEF_MASK, ROBOSW_DEF_MASK, 0);
+	if ((sc->hal.api.vlan_enable != NULL) &&
+	    (sc->hal.api.vlan_set_vlan_group != NULL))
+	{
+		sc->info.es_vlan_caps |= ETHERSWITCH_VLAN_DOT1Q;
+		/* Enable VLAN support and set defaults */
+		sc->hal.api.vlan_enable(sc, 1);
+		sc->hal.api.vlan_set_vlan_group(sc, ROBOSW_DEF_VLANID, ROBOSW_DEF_VLANID,
+		    ROBOSW_DEF_MASK, ROBOSW_DEF_MASK, 0);
+	}
 
 	/* At startup, let's specify all physical ports as one default VLAN group */
 	for (i = 0; i < sc->info.es_nports; i++) {
