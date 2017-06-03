@@ -176,7 +176,7 @@ robosw_attach(device_t dev)
 	if ((sc->hal.api.vlan_enable != NULL) &&
 	    (sc->hal.api.vlan_set_vlan_group != NULL))
 	{
-		sc->info.es_vlan_caps = ETHERSWITCH_VLAN_DOT1Q;
+		sc->info.es_vlan_caps |= ETHERSWITCH_VLAN_DOT1Q;
 		/* Enable VLAN support and set defaults */
 		sc->hal.api.vlan_enable(sc, 1);
 		sc->hal.api.vlan_set_vlan_group(sc, ROBOSW_DEF_VLANID, ROBOSW_DEF_VLANID,
