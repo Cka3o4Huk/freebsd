@@ -121,30 +121,34 @@ chipc_slicer_spi(device_t dev, const char *provider __unused,
 {
 	struct chipc_spi_softc	*sc;
 	device_t		 chipc, spi, spibus;
+	char			*err_msg = "OK";
 
 	BHND_DEBUG_DEV(dev, "initting SPI slicer: %s", device_get_name(dev));
 
 	/* must be SPI-attached flash */
 	spibus = device_get_parent(dev);
 	if (spibus == NULL) {
-		BHND_ERROR_DEV(dev, "no found ChipCommon SPI BUS device");
-		return (ENXIO);
+		err_msg = "no found ChipCommon SPI BUS device";
+		goto error;
 	}
 
 	spi = device_get_parent(spibus);
 	if (spi == NULL) {
-		BHND_ERROR_DEV(dev, "no found ChipCommon SPI device");
-		return (ENXIO);
+		err_msg = "no found ChipCommon SPI device";
+		goto error;
 	}
 
 	chipc = device_get_parent(spi);
 	if (device_get_devclass(chipc) != devclass_find("bhnd_chipc")) {
-		BHND_ERROR_DEV(dev, "no found ChipCommon device");
-		return (ENXIO);
+		err_msg = "no found ChipCommon device";
+		goto error;
 	}
 
 	sc = device_get_softc(spi);
 	return (chipc_slicer_walk(dev, sc->sc_flash_res, slices, nslices));
+error:
+	BHND_ERROR_DEV(dev, "%s", err_msg);
+	return (ENXIO);
 }
 
 static int
@@ -209,12 +213,14 @@ static int
 chipc_slicer_walk(device_t dev, struct resource *res,
     struct flash_slice *slices, int *nslices)
 {
-	struct chipc_slicer_info	result;
-	uint32_t	 		fs_ofs;
-	uint32_t			fw_len;
-	int				err;
+	struct chipc_slicer_info	 result;
+	struct flash_slice		*tmp;
+	uint32_t	 		 fs_ofs;
+	uint32_t			 fw_len;
+	int				 err, cnt;
 
 	*nslices = 0;
+	tmp = slices;
 
 	err = chipc_slicer_scan(dev, res, fw_magics, aux_magics, &result);
 	if (err != 0) {
@@ -239,32 +245,36 @@ chipc_slicer_walk(device_t dev, struct resource *res,
 		 * GEOM IO will panic if offset is not aligned
 		 * on sector size, i.e. 512 bytes
 		 */
-		if (fs_ofs % 0x200 != 0) {
+		if ((fs_ofs & 0x1FF) != 0) {
 			BHND_WARN_DEV(dev, "WARNING! filesystem offset should be"
-			    " aligned on sector size (%d bytes)", 0x200);
-			BHND_WARN_DEV(dev, "ignoring TRX firmware image");
+			    " aligned on sector size (%d bytes)\n"
+			    " ignoring TRX firmware image", 0x200);
 			break;
 		}
 
-		slices[*nslices].base = result.fw_offset + fs_ofs;
-		slices[*nslices].size = fw_len - fs_ofs;
-		slices[*nslices].label = "rootfs";
-		*nslices += 1;
+		tmp->base = result.fw_offset + fs_ofs;
+		tmp->size = fw_len - fs_ofs;
+		tmp->label = "rootfs";
+		cnt++;
+		tmp++;
 
-		if (fw_len + CHIPC_SLICER_CFGSIZE <= result.fw_size) {
-			/* configuration slice */
-			slices[*nslices].size = CHIPC_SLICER_CFGSIZE;
-			slices[*nslices].base = result.fw_end -
-						    slices[*nslices].size;
-			slices[*nslices].base = (slices[*nslices].base / 0x10000) * 0x10000;
-			slices[*nslices].label = "cfg";
-			*nslices += 1;
+		if (fw_len + CHIPC_SLICER_CFGSIZE > result.fw_size)
+		{
+			/* no cfg slice, break */
+			break;
 		}
+		/* configuration slice */
+		tmp->size = CHIPC_SLICER_CFGSIZE;
+		tmp->base = ((result.fw_end - CHIPC_SLICER_CFGSIZE) &
+		    ~CHIPC_SLICER_CFGSIZE);
+		tmp->label = "cfg";
+		cnt++;
 		break;
 	default:
 		break;
 	}
 
-	BHND_TRACE("slicer: done");
+	BHND_TRACE("slicer: found %d partitions", cnt);
+	*nslices = cnt;
 	return (0);
 }
