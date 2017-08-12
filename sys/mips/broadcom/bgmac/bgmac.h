@@ -145,5 +145,5 @@ bgmac_decode_ctl(uint32_t val)
 
 void	bgmac_if_start(struct ifnet *ifp);
 void	bgmac_reset(struct bgmac_softc *sc);
-
+void	bgmac_print_debug(struct bgmac_softc* sc);
 #endif /* _BGMAC_H_ */
