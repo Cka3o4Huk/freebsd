@@ -89,10 +89,10 @@ bcm_mips74k_attach(device_t dev)
 	device_t		*children;
 	uint32_t		 tmp;
 	uint32_t 		 intmasks[BHND_MIPS74K_IRQN];
-	int			 error;
-	int 			 offset, count;
+	int			 error, count;
 	int			 i, j;
 
+	error = 0;
 	sc = device_get_softc(dev);
 	sc->dev = dev;
 
@@ -100,42 +100,37 @@ bcm_mips74k_attach(device_t dev)
 	sc->mem_rid = 0;
 	sc->mem_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &sc->mem_rid,
 	    RF_ACTIVE);
-	if (sc->mem_res == NULL)
-		return (ENXIO);
-
+	if (sc->mem_res == NULL) {
+		error = ENXIO;
+		goto out;
+	}
+	
+	error = device_get_children(device_get_parent(dev), &children,
+	    &count);
+	
+	if (error) {
+		BHND_ERROR_DEV(dev, "can't get list of BHND devices: %d",
+		    error);
+		goto out;
+	}
+	
 	/* Route MIPS timer to IRQ5 */
 	bus_write_4(sc->mem_res, BCM_MIPS74K_INTR5_SEL,
 	    (1<<BCM_MIPS74K_TIMER_IVEC));
 
-	/* Use intmask0-4 to identify mapping IRQ to cores */
-	offset = BCM_MIPS74K_INTR0_SEL;
-
-	/* scan IRQ masks of lines */
+	/* Use intmask0-4 to identify mapping IRQ to cores and scan IRQ masks of lines */
 	for (i = 0; i < BHND_MIPS74K_IRQN; i++) {
-		intmasks[i] = bus_read_4(sc->mem_res, offset);
-		offset += sizeof(uint32_t);
-	}
-
-	error = device_get_children(device_get_parent(dev), &children,
-	    &count);
-
-	if (error) {
-		BHND_ERROR_DEV(dev, "can't get list of BHND devices: %d",
-		    error);
-		return (error);
+		intmasks[i] = bus_read_4(sc->mem_res, 
+		    BCM_MIPS74K_INTR0_SEL + i * sizeof(uint32_t));
 	}
 
 	for (i = 0; i < count; i++) {
 		error = bhnd_read_config(children[i],
 		    BCMA_DMP_OOBSELOUTA30, &tmp, sizeof(uint32_t));
-		if (error != 0) {
-			BHND_INFO_DEV(dev,
-			    "can't read out-of-band A30 for [%d]: %d", i, error);
+		if ((error != 0) || (tmp == 0)) {
+			error = 0;
 			continue;
 		}
-
-		if (tmp == 0)
-			continue;
 
 		/* filter bits by LINE mask */
 		tmp &= 0x1f;
@@ -158,8 +153,8 @@ bcm_mips74k_attach(device_t dev)
 		}
 	}
 	free(children, M_TEMP);
-
-	return (0);
+out:
+	return (error);
 }
 
 static int
