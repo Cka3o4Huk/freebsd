@@ -136,10 +136,18 @@ static int	bgmac_if_ioctl(if_t ifp, u_long command, caddr_t data);
 static int	bgmac_if_mediachange(struct ifnet *ifp);
 static void	bgmac_if_mediastatus(struct ifnet *ifp, struct ifmediareq *ifmr);
 
-
 /****************************************************************************
  * Implementation
  ****************************************************************************/
+void
+bgmac_print_debug(struct bgmac_softc* sc)
+{
+
+	BGMACDUMP(sc);
+	BGMACDUMPMIB(sc);
+	BGMACDUMPERRORS(sc);
+}
+
 static int
 bgmac_probe(device_t dev)
 {
@@ -180,7 +188,7 @@ bgmac_attach(device_t dev)
 		return (ENXIO);
 	}
 
-	BGMACDUMP(sc);
+	bgmac_print_debug(sc);
 
 	/*
 	 * Hook interrupt
@@ -617,19 +625,15 @@ bgmac_intr(void *arg)
 
 	if (intr_status & BGMAC_REG_INTR_STATUS_ERR_OVER) {
 		BHND_ERROR_DEV(sc->dev, "Overflow!");
-		BGMACDUMP(sc);
-		BGMACDUMPMIB(sc);
-		BGMACDUMPERRORS(sc);
+		bgmac_print_debug(sc);
 		bcm_dma_rx(sc->dma->rx);
-		BGMACDUMP(sc);
-		BGMACDUMPMIB(sc);
-		BGMACDUMPERRORS(sc);
+		bgmac_print_debug(sc);
 		intr_status &= ~BGMAC_REG_INTR_STATUS_ERR_OVER;
 	}
 
 	if (intr_status & BGMAC_REG_INTR_STATUS_ERR_DESC){
 		BHND_ERROR_DEV(sc->dev, "ERROR!");
-		BGMACDUMP(sc);
+		bgmac_print_debug(sc);
 		kdb_enter("bgmac_error", "unknown error: descriptor?");
 		intr_status &= ~BGMAC_REG_INTR_STATUS_ERR_OVER;
 	}

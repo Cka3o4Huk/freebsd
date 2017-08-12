@@ -144,9 +144,7 @@ DB_FUNC(dump, db_show_bgmacdump, db_bgmac_table, CS_OWN, NULL)
 
 	if (dev != NULL) {
 		sc = device_get_softc(dev);
-		BGMACDUMP(sc);
-		BGMACDUMPMIB(sc);
-		BGMACDUMPERRORS(sc);
+		bgmac_print_debug(sc);
 	} else
 		db_printf("usage: show bgmac dump <bgmac>\n");
 
