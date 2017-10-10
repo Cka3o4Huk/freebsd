@@ -220,6 +220,7 @@ chipc_slicer_walk(device_t dev, struct resource *res,
 	int				 err, cnt;
 
 	*nslices = 0;
+	cnt = 0;
 	tmp = slices;
 
 	err = chipc_slicer_scan(dev, res, fw_magics, aux_magics, &result);
@@ -255,6 +256,9 @@ chipc_slicer_walk(device_t dev, struct resource *res,
 		tmp->base = result.fw_offset + fs_ofs;
 		tmp->size = fw_len - fs_ofs;
 		tmp->label = "rootfs";
+
+		BHND_TRACE_DEV(dev, "TRX filesystem rootfs: 0x%x-0x%x", (unsigned)tmp->base,
+		   (unsigned)(tmp->base + tmp->size));
 		cnt++;
 		tmp++;
 
@@ -268,6 +272,8 @@ chipc_slicer_walk(device_t dev, struct resource *res,
 		tmp->base = ((result.fw_end - CHIPC_SLICER_CFGSIZE) &
 		    ~CHIPC_SLICER_CFGSIZE);
 		tmp->label = "cfg";
+		BHND_TRACE_DEV(dev, "TRX filesystem cfg: 0x%x-0x%x", (unsigned)tmp->base,
+		   (unsigned)(tmp->base + tmp->size));
 		cnt++;
 		break;
 	default:
