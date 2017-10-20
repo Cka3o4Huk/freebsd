@@ -105,6 +105,7 @@ struct bhnd_device bgmac_match[] = {
  ****************************************************************************/
 static int	bgmac_probe(device_t dev);
 static int	bgmac_attach(device_t dev);
+static int	bgmac_detach(device_t dev);
 
 /* MII interface */
 static int	bgmac_readreg(device_t dev, int phy, int reg);
@@ -221,6 +222,22 @@ bgmac_attach(device_t dev)
 
 	return 	0;
 }
+
+static int
+bgmac_detach(device_t dev)
+{
+
+	/* stop chip */
+	bgmac_chip_stop();
+	/* unmap dma and reset chip configuration */
+	bgmac_chip_deinit();
+	/* free resources */
+	return 0;
+}	
+
+/*
+ * Chip operations
+ */
 
 static int
 bgmac_chip_force_init(struct bgmac_softc *sc)
@@ -701,6 +718,8 @@ bgmac_rxeof(struct device *dev, struct mbuf *m, struct bcm_rx_header *rxhdr)
 static device_method_t bgmac_methods[] = {
 		DEVMETHOD(device_probe,	 	bgmac_probe),
 		DEVMETHOD(device_attach, 	bgmac_attach),
+		DEVMETHOD(device_detach,	bgmac_detach),
+
 		/** miibus interface **/
 		DEVMETHOD(miibus_readreg, 	bgmac_readreg),
 		DEVMETHOD(miibus_writereg, 	bgmac_writereg),
