@@ -32,7 +32,7 @@
 .PATH:	${SRCTOP}/sys/dev/etherswitch/robosw
 
 KMOD=	robosw
-SRCS=	gpiospi.c
+SRCS=	bcm5325.c bcm53115.c bcm5358.c robosw_ddb.c robosw_hal.c robosw.c
 SRCS+=	device_if.h bus_if.h etherswitch_if.h miibus_if.h mdio_if.h
 SRCS+=	opt_ddb.h
 
