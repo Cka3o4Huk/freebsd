@@ -15,13 +15,13 @@ include		"../broadcom/std.broadcom"
 options 	CFE
 device		cfe
 
-#options 	ALT_BREAK_TO_DEBUGGER
-#options 	BREAK_TO_DEBUGGER
-#options	BOOTVERBOSE=1
+options 	ALT_BREAK_TO_DEBUGGER
+options 	BREAK_TO_DEBUGGER
+options		BOOTVERBOSE=1
 
 makeoptions	TRAMPLOADADDR=0x80900000
 #makeoptions	DEBUG="-g3"		#Build kernel with gdb(1) debug symbols
-makeoptions	MODULES_OVERRIDE=""
+makeoptions	MODULES_OVERRIDE="bgmac etherswitch/robosw"
 makeoptions	INLINE_LIMIT=768
 
 options 	DDB
@@ -80,13 +80,13 @@ device		bcma_nexus
 #device		bhnd_pcib		# PCIe-G1 core
 
 #Flash
-#device		spibus
-#device		mx25l			# Serial Flash
-#device		cfi			# Parallel Flash
-#device		cfid
+device		spibus
+device		mx25l			# Serial Flash
+device		cfi			# Parallel Flash
+device		cfid
 
 #UART
-#device		uart
+device		uart
 
 #Base
 device		loop
@@ -101,15 +101,15 @@ device		md
 
 #Ethernet
 # device 	bfe			# XXX will build both pci and siba
-#device 		miibus			# attachments
+device 		miibus			# attachments
 #device		bgmac
-#device		mdio
-#device		bpf
-#device		etherswitch
-#device		vlan
+device		mdio
+device		bpf
+device		etherswitch
+device		vlan
 
 #NVRAM
-#device		nvram2env
+device		nvram2env
 
 # pci devices
 
@@ -119,9 +119,12 @@ device		md
 #options 	USB_EHCI_BIG_ENDIAN_DESC        # handle big-endian byte order
 #options 	USB_HOST_ALIGN=32		# AR71XX (MIPS in general?) requires this
 
-#device		usb			# USB Bus (required)
-#device		ohci			# OHCI interface
-#device		ehci			# EHCI interface (USB 2.0)
+device		usb			# USB Bus (required)
+device		ohci			# OHCI interface
+device		ehci			# EHCI interface (USB 2.0)
+
+device		uether			# USB Ethernet
+device		ure			# USB Realtek
 
 #device		scbus
 #device		umass
