@@ -270,7 +270,7 @@ chipc_slicer_walk(device_t dev, struct resource *res,
 		/* configuration slice */
 		tmp->size = CHIPC_SLICER_CFGSIZE;
 		tmp->base = ((result.fw_end - CHIPC_SLICER_CFGSIZE) &
-		    ~CHIPC_SLICER_CFGSIZE);
+		    ~(CHIPC_SLICER_CFGSIZE - 1));
 		tmp->label = "cfg";
 		BHND_TRACE_DEV(dev, "TRX filesystem cfg: 0x%x-0x%x", (unsigned)tmp->base,
 		   (unsigned)(tmp->base + tmp->size));
