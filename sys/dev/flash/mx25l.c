@@ -298,8 +298,11 @@ mx25l_write(struct mx25l_softc *sc, off_t offset, caddr_t data, off_t count)
 	 * Writes must be aligned to the erase sectorsize, since blocks are
 	 * fully erased before they're written to.
 	 */
-	if (count % sc->sc_erasesize != 0 || offset % sc->sc_erasesize != 0)
+	if (count % sc->sc_erasesize != 0 || offset % sc->sc_erasesize != 0) {
+		device_printf(dev, "unaligned write error for (%jx %jx), sector size %x\n",
+				offset, count, sc->sc_sectorsize);
 		return (EIO);
+	}
 
 	/*
 	 * Maximum write size for CMD_PAGE_PROGRAM is FLASH_PAGE_SIZE, so loop
