@@ -294,8 +294,11 @@ mx25l_write(device_t dev, off_t offset, caddr_t data, off_t count)
 	 * Use the erase sectorsize here since blocks are fully erased
 	 * first before they're written to.
 	 */
-	if (count % sc->sc_sectorsize != 0 || offset % sc->sc_sectorsize != 0)
+	if (count % sc->sc_sectorsize != 0 || offset % sc->sc_sectorsize != 0) {
+		device_printf(dev, "unaligned write error for (%jx %jx), sector size %x\n",
+				offset, count, sc->sc_sectorsize);
 		return (EIO);
+	}
 
 	/*
 	 * Assume here that we write per-sector only 
