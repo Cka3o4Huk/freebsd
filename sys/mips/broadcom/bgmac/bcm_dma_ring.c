@@ -308,7 +308,7 @@ bcm_dma_ring_load(struct bcm_dma_ring *dr)
 
 	if (dr->dr_type == BCM_DMA_64BIT) {
 		ring64 = (uint64_t)(dr->dr_ring_dmabase);
-		BHND_DEBUG_DEV(dev, "dr_ring_dmabase: 0x%jx\n", ring64);
+		BHND_DEBUG_DEV(dev, "dr_ring_dmabase: 0x%jx", ring64);
 
 		/* try to suspend DMA code */
 		BCM_DMA_WRITE(dr, BCM_DMA_CTL, BCM_DMA_CTL_SUSPEND);
@@ -320,7 +320,7 @@ bcm_dma_ring_load(struct bcm_dma_ring *dr)
 		} while (value != BCM_DMA_STAT_DISABLED &&
 			 value != BCM_DMA_STAT_IDLEWAIT &&
 			 value != BCM_DMA_STAT_STOPPED && --i);
-		BHND_DEBUG_DEV(dev, "dr_ring_dmabase: susp %i %x\n", i, value);
+		BHND_DEBUG_DEV(dev, "dr_ring_dmabase: susp %i %x", i, value);
 		/* try to off DMA code */
 		BCM_DMA_WRITE(dr, BCM_DMA_CTL, 0);
 		i = 10;
@@ -329,7 +329,7 @@ bcm_dma_ring_load(struct bcm_dma_ring *dr)
 			value = BCM_DMA_READ(dr, BCM_DMA64_STATUS);
 			value = (value && BCM_DMA64_STATE) >> BCM_DMA64_STATE_SHIFT;
 		} while (value != BCM_DMA_STAT_DISABLED && --i);
-		BHND_DEBUG_DEV(dev, "dr_ring_dmabase: off %i %x\n", i, value);
+		BHND_DEBUG_DEV(dev, "dr_ring_dmabase: off %i %x", i, value);
 
 		addrext = ((ring64 >> 32) & BCM_DMA_ADDR_MASK) >> 30;
 		value = (dr->dr_is_tx) ? 0 :
