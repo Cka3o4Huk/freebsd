@@ -40,13 +40,13 @@
 #include "bgmacvar.h"
 
 #define BGMACDUMPREG(sc, _reg)						\
-	BHND_INFO_DEV(sc->dev, #_reg "=%08x", bus_read_4(sc->mem, _reg))
+	BHND_INFO_DEV(sc->dev, #_reg "\t=%08x", bus_read_4(sc->mem, _reg))
 
 #define BGMACDUMPREGF(sc, _reg, _func)					\
 	do {								\
 		uint32_t val = bus_read_4(sc->mem, _reg);		\
 		char* desc = _func(val);				\
-		BHND_INFO_DEV(sc->dev,  #_reg "=%08x (%s)", val, desc)	\
+		BHND_INFO_DEV(sc->dev,  #_reg "\t=%08x (%s)", val, desc)	\
 		free(desc, M_TEMP);						\
 	} while (0);
 
