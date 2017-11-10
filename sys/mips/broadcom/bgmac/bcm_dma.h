@@ -60,7 +60,7 @@ struct bcm_dma {
 	uint64_t			lastseq;	/* XXX FIXME */
 };
 
-#define BCM_FRAME_OFFSET		0x06
+#define BCM_FRAME_OFFSET		0x1e	/* 30 bytes */
 
 struct bcm_rx_header {
 	uint16_t len;
