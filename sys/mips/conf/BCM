@@ -17,7 +17,8 @@ device		cfe
 
 options 	ALT_BREAK_TO_DEBUGGER
 options 	BREAK_TO_DEBUGGER
-options		BOOTVERBOSE=1
+#options		BOOTVERBOSE=1
+#options		BUS_DEBUG
 
 makeoptions	TRAMPLOADADDR=0x80900000
 #makeoptions	DEBUG="-g3"		#Build kernel with gdb(1) debug symbols
@@ -120,7 +121,7 @@ device		nvram2env
 #options 	USB_HOST_ALIGN=32		# AR71XX (MIPS in general?) requires this
 
 device		usb			# USB Bus (required)
-device		ohci			# OHCI interface
+#device		ohci			# OHCI interface
 device		ehci			# EHCI interface (USB 2.0)
 
 device		uether			# USB Ethernet
