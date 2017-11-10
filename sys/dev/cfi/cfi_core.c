@@ -167,7 +167,7 @@ cfi_write_op(struct cfi_softc *sc, u_int ofs, u_int val, u_int buswidth)
 }
 
 /*
- * This is same workaound as NetBSD sys/dev/nor/cfi.c cfi_reset_default()
+ * This is same workaround as NetBSD sys/dev/nor/cfi.c cfi_reset_default()
  */
 static void
 cfi_reset_default(struct cfi_softc *sc)
@@ -175,16 +175,20 @@ cfi_reset_default(struct cfi_softc *sc)
 
 	cfi_write_op(sc, 0, CFI_BCS_READ_ARRAY2, sc->sc_buswidth);
 	cfi_write_op(sc, 0, CFI_BCS_READ_ARRAY, sc->sc_buswidth);
+	DELAY(30);
 }
 
 uint8_t
 cfi_read_qry(struct cfi_softc *sc, u_int ofs)
 {
 	uint8_t val;
- 
+
 	cfi_write_op(sc, CFI_QRY_CMD_ADDR * sc->sc_width, CFI_QRY_CMD_DATA,
 			sc->sc_buswidth);
 	val = cfi_read(sc, ofs * sc->sc_width);
+	if (bootverbose)
+		device_printf(sc->sc_dev, "width/buswidth/val: %d / %d / %x\n",
+		    sc->sc_width, sc->sc_buswidth, val);
 	cfi_reset_default(sc);
 	return (val);
 } 
