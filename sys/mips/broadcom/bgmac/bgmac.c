@@ -182,6 +182,20 @@ bgmac_attach(device_t dev)
 	sc->mem = res[0];
 	sc->irq = res[1];
 
+#if defined(notyet)
+	/* Get power */
+	error = bhnd_alloc_pmu(dev);
+	if(error) {
+		BHND_ERROR_DEV(dev, "can't alloc pmu: %d", error);
+		return (error);
+	}
+
+	error = bhnd_release_ext_rsrc(dev, 1);
+	if(error) {
+		BHND_ERROR_DEV(dev, "can't release ext: %d", error);
+		return (error);
+	}
+#endif
 	error = bgmac_get_config(sc);
 	if (error) {
 		BHND_ERROR_DEV(dev, "can't get bgmac config from NVRAM: %d",
@@ -226,12 +240,29 @@ bgmac_attach(device_t dev)
 static int
 bgmac_detach(device_t dev)
 {
+	struct bgmac_softc	*sc;
+
+	sc = device_get_softc(dev);
+
+	/* detach etherswitch connected via MDIO */
+	bus_generic_detach(dev);
+
+	if (sc->mdio != NULL)
+		device_delete_child(dev, sc->mdio);
+
+	if (sc->mem != NULL)
+		bus_release_resource(dev, bgmac_rspec[0].type, bgmac_rspec[0].rid, sc->mem);
+
+	if (sc->irq != NULL)
+		bus_release_resource(dev, bgmac_rspec[1].type, bgmac_rspec[1].rid, sc->irq);
 
 	/* stop chip */
+#if defined(notyet)
 	bgmac_chip_stop();
 	/* unmap dma and reset chip configuration */
 	bgmac_chip_deinit();
 	/* free resources */
+#endif
 	return 0;
 }	
 
