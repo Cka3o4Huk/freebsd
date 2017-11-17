@@ -31,6 +31,8 @@
  *	from: @(#)sys_machdep.c	5.5 (Berkeley) 1/19/91
  */
 
+#include "opt_ddb.h"
+
 #include <sys/cdefs.h>
 __FBSDID("$FreeBSD$");
 
@@ -84,3 +86,17 @@ sysarch(struct thread *td, struct sysarch_args *uap)
 	}
 	return (EINVAL);
 }
+
+#ifdef DDB
+#include <ddb/ddb.h>
+#include <machine/proc.h>
+
+DB_SHOW_COMMAND(tls, db_show_tls)
+{
+	struct thread *td;
+
+	td = curthread;
+	db_printf("TLS: %p %x\n", td->td_md.md_tls, td->td_md.md_tls_tcb_offset);
+	return;
+}
+#endif /* DDB */
