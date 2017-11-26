@@ -163,7 +163,7 @@ free_aligned(void *ptr)
  * There are two versions of variant I of TLS
  *
  * - ARM and aarch64 uses original variant I as is described in [1] and [2],
- *   where TP points to start of TCB folowed by aligned TLS segment.
+ *   where TP points to start of TCB followed by aligned TLS segment.
  *   Both TCB and TLS must be aligned to alignment of TLS section. The TCB[0]
  *   points to DTV vector and DTV values are real addresses (without bias).
  *   Note: for Local Exec TLS Model, the offsets from TP (TCB in this case) to
@@ -172,7 +172,7 @@ free_aligned(void *ptr)
  * - MIPS, PowerPC and RISC-V uses modified version of variant I,
  *  described in [3] where TP points (with bias) to TLS and TCB immediately
  *   precedes TLS without any alignment gap[4]. Only TLS should be aligned.
- *   The TCB[0] points to DTV vector and DTV values are biased by constat
+ *   The TCB[0] points to DTV vector and DTV values are biased by constant
  *   value (0x8000) from real addresses[5].
  *
  * [1] Ulrich Drepper: ELF Handling for Thread-Local Storage
@@ -211,7 +211,7 @@ get_tls_block_ptr(void *tcb, size_t tcbsize, size_t tcbalign)
 #else
 	post_size = 0;
 #endif
-	tls_block_size = extra_size + TLS_TCB_SIZE + post_size;
+	tls_block_size = tcbsize + post_size;
 	pre_size = roundup2(tls_block_size, tcbalign) - tls_block_size;
 
 	return ((char *)tcb - pre_size - extra_size);
@@ -273,7 +273,7 @@ __libc_allocate_tls(void *oldtcb, size_t tcbsize, size_t tcbalign)
 #else
 	post_size = 0;
 #endif
-	tls_block_size = extra_size + TLS_TCB_SIZE + post_size;
+	tls_block_size = tcbsize + post_size;
 	pre_size = roundup2(tls_block_size, tcbalign) - tls_block_size;
 	tls_block_size += pre_size + tls_static_space;
 
@@ -285,7 +285,7 @@ __libc_allocate_tls(void *oldtcb, size_t tcbsize, size_t tcbalign)
 	}
 	memset(tls_block, 0, tls_block_size);
 	tcb = (Elf_Addr**)(tls_block + pre_size + extra_size);
-	tls = (char *)tcb + TLS_TCB_SIZE + post_size;
+	tls = (char*)(tls_block + tls_block_size - tls_static_space);
 
 	if (oldtcb != NULL) {
 		memcpy(tls_block, get_tls_block_ptr(oldtcb, tcbsize, tcbalign),
@@ -294,7 +294,7 @@ __libc_allocate_tls(void *oldtcb, size_t tcbsize, size_t tcbalign)
 
 		/* Adjust the DTV. */
 		dtv = tcb[0];
-		dtv[2] = (Elf_Addr)(tls + DTV_OFFSET);
+		dtv[2] = (Elf_Addr)tls;
 	} else {
 		dtv = __je_bootstrap_malloc(3 * sizeof(Elf_Addr));
 		if (dtv == NULL) {
@@ -305,7 +305,7 @@ __libc_allocate_tls(void *oldtcb, size_t tcbsize, size_t tcbalign)
 		tcb[0] = dtv;
 		dtv[0] = 1;		/* Generation. */
 		dtv[1] = 1;		/* Segments count. */
-		dtv[2] = (Elf_Addr)(tls + DTV_OFFSET);
+		dtv[2] = (Elf_Addr)tls;
 
 		if (tls_init_size > 0)
 			memcpy((void*)dtv[2], tls_init, tls_init_size);
