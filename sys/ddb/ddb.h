@@ -140,11 +140,11 @@ static struct command __CONCAT(_name,_suffix) = {		\
 };								\
 static void __CONCAT(__CONCAT(_name,_suffix),_add)(void *arg __unused) \
     { db_command_register(&list, &__CONCAT(_name,_suffix)); }	\
-SYSINIT(__CONCAT(_name,_suffix), SI_SUB_KLD, SI_ORDER_ANY,	\
+SYSINIT(__CONCAT(_name,_suffix), SI_SUB_DDB, SI_ORDER_ANY,	\
     __CONCAT(__CONCAT(_name,_suffix),_add), NULL);		\
 static void __CONCAT(__CONCAT(_name,_suffix),_del)(void *arg __unused) \
     { db_command_unregister(&list, &__CONCAT(_name,_suffix)); }	\
-SYSUNINIT(__CONCAT(_name,_suffix), SI_SUB_KLD, SI_ORDER_ANY,	\
+SYSUNINIT(__CONCAT(_name,_suffix), SI_SUB_DDB, SI_ORDER_ANY,	\
     __CONCAT(__CONCAT(_name,_suffix),_del), NULL);
 
 /*
