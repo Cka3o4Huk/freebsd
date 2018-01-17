@@ -111,6 +111,18 @@ robosw_probe(device_t dev)
 	 *  - fetch switch ID
 	 *  - set description
 	 */
+
+#ifdef FDT
+	phandle_t robosw_node;
+	pcell_t cell;
+
+	robosw_node = fdt_find_compatible(OF_finddevice("/"),
+	    "brcm,bcm53125", 0);
+
+	if (robosw_node == 0)
+		return (ENXIO);
+#endif
+
 	return (BUS_PROBE_DEFAULT);
 }
 
