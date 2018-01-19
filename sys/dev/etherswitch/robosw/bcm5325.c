@@ -43,17 +43,19 @@ __FBSDID("$FreeBSD$");
 #include "robosw_reg.h"
 #include "robosw_hal.h"
 
+static int	bcm5325_reset(struct robosw_softc *sc);
 static int	bcm5325_get_port_pvid(struct robosw_softc *sc, int port, int *pvid);
 static int	bcm5325_set_port_pvid(struct robosw_softc *sc, int port, int pvid);
-static int	bcm5325_reset(struct robosw_softc *sc);
 static int	bcm5325_vlan_enable(struct robosw_softc *sc, int on);
 
 struct robosw_functions bcm5325_f = {
 	.api.reset = bcm5325_reset,
+	.api.init_context = NULL,
 	.api.vlan_get_pvid = bcm5325_get_port_pvid,
 	.api.vlan_set_pvid = bcm5325_set_port_pvid,
-	.api.vlan_enable = bcm5325_vlan_enable
-	/* TODO: add VLAN getter/setter */
+	.api.vlan_enable = bcm5325_vlan_enable,
+	.api.vlan_get_vlan_group = NULL,
+	.api.vlan_set_vlan_group = NULL
 };
 
 struct robosw_hal bcm5325_hal = {

@@ -58,7 +58,9 @@ struct robosw_softc;
 struct robosw_hal;
 
 struct robosw_api {
+	/* Initialization functions */
 	int (* reset) (struct robosw_softc *sc);
+	void (* init_context) (struct robosw_softc *sc);
 
 	/* VLAN functions */
 	int (* vlan_enable)   (struct robosw_softc *sc, int on);
