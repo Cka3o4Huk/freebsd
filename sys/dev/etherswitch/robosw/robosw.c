@@ -139,33 +139,42 @@ robosw_attach(device_t dev)
 	sc = device_get_softc(dev);
 	sc->sc_dev = dev;
 	sc->sc_parent = device_get_parent(dev);
-
 	if (sc->sc_parent == NULL)
 		return (ENXIO);
+
 	sc->sc_full_reset = ROBOSW_TRYRESET;
 	sc->sc_debug = bootverbose;
 
 	mtx_init(&sc->sc_mtx, "robosw", NULL, MTX_DEF);
 
-	sc->info.es_nports = 5; //B53_NUM_PHYS
-	strcpy(sc->info.es_name, "Broadcom RoboSwitch");
-	sc->info.es_nvlangroups = 16;
-	sc->info.es_vlan_caps = 0;
-	sc->info.es_vlan_caps = ETHERSWITCH_VLAN_PORT;
-
-	/* Initialize HAL by switch ID and chipcommon ID */
+	/*
+	 * Initialize HAL (by switch ID and chipcommon ID)
+	 */
 	robosw_hal_init(sc);
-
-	/* Check HAL prerequisites */
 	if (sc->hal.api.vlan_enable == NULL) {
 		/* TODO: if (err) add detach */
 		device_printf(dev, "[ERROR] no HAL for enable 1q\n");
 		goto fail;
 	}
 
+	/*
+	 * There are parameters depending of particular chip like capabilities,
+	 * number of ports and maximum amounts of VLAN. This information is
+	 * populated by init_context method of HAL.
+	 * XXX: implement init_context for known chips
+	 */
+	sc->info.es_nports = ROBOSW_DEF_NPORTS;
+	sc->info.es_nvlangroups = ROBOSW_DEF_NVLANS;
+	sc->info.es_vlan_caps = ETHERSWITCH_VLAN_PORT;
+
+	if(sc->hal.api.init_context != NULL)
+		sc->hal.api.init_context(sc);
+
+	strcpy(sc->info.es_name, "Broadcom RoboSwitch");
+
 	ROBOSWDUMP;
 
-	/* Turn off forwarding - start manipulations with rules/routes */
+	/* Turn off forwarding to start manipulations with rules/routes */
 	err = robosw_enable_fw(dev, 0);
 	if (err != 0) {
 		device_printf(dev, "can't disable forwarding\n");
@@ -319,15 +328,15 @@ robosw_mii_pollstat(struct robosw_softc *sc)
 int
 robosw_op(struct robosw_softc *sc, uint32_t reg, uint32_t *res, int op)
 {
-	uint64_t 	val;
-	uint8_t		len, page;
+	uint64_t 	data;
 	uint16_t	data_reg, data_val;
-	int		i, tmp;
+	uint8_t		len, page;
+	int		ind, tmp;
 
 	if (res == NULL)
 		return (EINVAL);
 
-	val  = (op == ROBOSW_WRITEOP) ? *res : 0;
+	data = (op == ROBOSW_WRITEOP) ? *res : 0;
 	len  = (ROBOSW_UNSHIFT(reg, ROBOSW_LEN) + 1) / 2; /* in halfword */
 	page =  ROBOSW_UNSHIFT(reg, ROBOSW_PAGE);
 	reg  =  ROBOSW_UNSHIFT(reg, ROBOSW_REG);
@@ -337,9 +346,9 @@ robosw_op(struct robosw_softc *sc, uint32_t reg, uint32_t *res, int op)
 	ROBOSW_WRITEREG(ROBOSW_ACCESS_CONTROL_REG, tmp);
 
 	if (op == ROBOSW_WRITEOP)
-		for (i = 0; i < len; i++) {
-			data_reg = ROBOSW_DATA_REG_BASE + i;
-			data_val = (uint16_t)((val >> (16*i)) & 0xffff);
+		for (ind = 0; ind < len; ind++) {
+			data_reg = ROBOSW_DATA_REG_BASE + ind;
+			data_val = (uint16_t)((data >> (16*ind)) & 0xffff);
 			ROBOSW_WRITEREG(data_reg, data_val);
 		}
 
@@ -348,31 +357,31 @@ robosw_op(struct robosw_softc *sc, uint32_t reg, uint32_t *res, int op)
 	ROBOSW_WRITEREG(ROBOSW_RW_CONTROL_REG, tmp);
 
 	/* is operation finished? */
-	i = ROBOSW_OP_RETRY;
-	for (; i > 0; i--)
+	ind = ROBOSW_OP_RETRY;
+	for (; ind > 0; ind--)
 		if ((ROBOSW_READREG(ROBOSW_RW_CONTROL_REG) &
 		     RW_CONTROL_OP_MASK) == RW_CONTROL_NOP)
 			break;
 
 	/* timed out */
-	if (i == 0) {
+	if (ind == 0) {
 		device_printf(sc->sc_dev, "timeout\n");
 		return (EBUSY);
 	}
 
 	/* get result */
 	if (op == ROBOSW_READOP) {
-		for (i = 0; i < len; i++)
-			val |= (ROBOSW_READREG(ROBOSW_DATA_REG_BASE + i)) << (16*i);
-		*res = val & UINT32_MAX;
+		for (ind = 0; ind < len; ind++)
+			data |= (ROBOSW_READREG(ROBOSW_DATA_REG_BASE + ind)) << (16*ind);
+		*res = data & UINT32_MAX;
 	}
 
 	/* Check that read/write status should be NOP / idle */
-	i = ROBOSW_READREG(ROBOSW_RW_STATUS_REG);
-	if (i & RW_CONTROL_OP_MASK)
+	ind = ROBOSW_READREG(ROBOSW_RW_STATUS_REG);
+	if (ind & RW_CONTROL_OP_MASK)
 		device_printf(sc->sc_dev,
 		    "RW operation not yet finished: reg=%08x status=%d\n",
-		    reg, i);
+		    reg, ind);
 
 	return (0);
 }
@@ -385,7 +394,7 @@ robosw_read4(struct robosw_softc *sc, uint32_t reg)
 
 	err = robosw_op(sc, reg, &val, 0);
 	if (err) {
-		device_printf(sc->sc_dev, "read reg[0x%x] failed\n", reg);
+		device_printf(sc->sc_dev, "read of register 0x%x failed with error code %x\n", reg, err);
 		return (UINT32_MAX);
 	}
 
@@ -401,7 +410,7 @@ robosw_write4(struct robosw_softc *sc, uint32_t reg, uint32_t val)
 	tmp = val;
 	err = robosw_op(sc, reg, &tmp, 1);
 	if (err)
-		device_printf(sc->sc_dev, "write reg[0x%x] failed\n", reg);
+		device_printf(sc->sc_dev, "write of register 0x%x failed with error code %x\n", reg, err);
 
 	return (err);
 }
@@ -425,6 +434,7 @@ robosw_reset(device_t dev)
 		return (err);
 	}
 
+	/* small delay to ensure that chip got reset */
 	DELAY(10000);
 
 	err = robosw_write4(sc, SWITCH_RESET, 0x00);
