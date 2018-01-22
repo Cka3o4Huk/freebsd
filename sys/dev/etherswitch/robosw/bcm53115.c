@@ -40,11 +40,11 @@ static int	bcm53115_get_vlan_group(struct robosw_softc *sc, int vlan_group,
 static int	bcm53115_set_vlan_group(struct robosw_softc *sc, int vlan_group,
 		    int vlan_id, int members, int untagged, int forward_id);
 static int 	bcm53115_reset(struct robosw_softc *sc);
-static int 	bcm53115_vlan_enable(struct robosw_softc *sc, int on);
+static int 	bcm53115_vlan_enable_1q(struct robosw_softc *sc, int on);
 
 struct robosw_functions bcm53115_f = {
 	.api.reset = bcm53115_reset,
-	.api.vlan_enable = bcm53115_vlan_enable,
+	.api.vlan_enable_1q = bcm53115_vlan_enable_1q,
 	.api.vlan_get_vlan_group = bcm53115_get_vlan_group,
 	.api.vlan_set_vlan_group = bcm53115_set_vlan_group
 };
@@ -58,6 +58,11 @@ static int
 bcm53115_reset(struct robosw_softc *sc)
 {
 	uint32_t	reg;
+	int		err;
+
+	err = ROBOSW_PARENT_API(bcm53115_hal)->reset(sc);
+	if (err != 0)
+		return (err);
 
 	reg = GLOBAL_MGMT_CTL_MGMT_PORT_MII;
 	ROBOSW_WR(GLOBAL_MGMT_CTL, reg, sc);
@@ -66,7 +71,7 @@ bcm53115_reset(struct robosw_softc *sc)
 }
 
 static int
-bcm53115_vlan_enable(struct robosw_softc *sc, int on)
+bcm53115_vlan_enable_1q(struct robosw_softc *sc, int on)
 {
 	uint32_t	ctl0, ctl1, drop, ctl4, ctl5, sw;
 

@@ -85,6 +85,7 @@ MALLOC_DEFINE(M_BCMSWITCH, "robosw", "robosw data structures");
 
 static int	robosw_probe(device_t dev);
 static int	robosw_attach(device_t dev);
+static int	robosw_detach(device_t dev);
 
 /* MII bus - delegate to parent */
 static int	robosw_mii_writereg(device_t dev, int phy, int reg, int val);
@@ -94,6 +95,9 @@ static int	robosw_mii_readreg(device_t dev, int phy, int reg);
 static void	robosw_mii_tick(void *arg);
 static void	robosw_mii_pollstat(struct robosw_softc *sc);
 
+/* Etherswitch interface */
+static int	robosw_getconf(device_t dev, etherswitch_conf_t	*conf);
+static int	robosw_setconf(device_t dev, etherswitch_conf_t *conf);
 static etherswitch_info_t*	robosw_getinfo(device_t dev);
 
 /* Media callbacks */
@@ -151,8 +155,7 @@ robosw_attach(device_t dev)
 	 * Initialize HAL (by switch ID and chipcommon ID)
 	 */
 	robosw_hal_init(sc);
-	if (sc->hal.api.vlan_enable == NULL) {
-		/* TODO: if (err) add detach */
+	if (sc->hal.api.vlan_enable_1q == NULL) {
 		device_printf(dev, "[ERROR] no HAL for enable 1q\n");
 		goto fail;
 	}
@@ -189,24 +192,26 @@ robosw_attach(device_t dev)
 		device_printf(dev, "reset failed\n");
 	}
 
-	if (sc->hal.api.reset != NULL) {
-		sc->hal.api.reset(sc);
-		/* TODO: if (err) add detach */
-	}
-
-	if ((sc->hal.api.vlan_enable != NULL) &&
+	if ((sc->hal.api.vlan_enable_1q != NULL) &&
 	    (sc->hal.api.vlan_set_vlan_group != NULL))
 	{
+		device_printf(dev, "VLAN settings...\n");
 		sc->info.es_vlan_caps |= ETHERSWITCH_VLAN_DOT1Q;
 		/* Enable VLAN support and set defaults */
-		sc->hal.api.vlan_enable(sc, 1);
+		sc->hal.api.vlan_enable_1q(sc, 1);
+		sc->vlan_mode = ETHERSWITCH_VLAN_DOT1Q;
 		sc->hal.api.vlan_set_vlan_group(sc, ROBOSW_DEF_VLANID, ROBOSW_DEF_VLANID,
 		    ROBOSW_DEF_MASK, ROBOSW_DEF_MASK, 0);
+	} else {
+		device_printf(dev, "Disable 1q due to lack of API\n");
+		sc->hal.api.vlan_enable_1q(sc, 0);
+		sc->vlan_mode = ETHERSWITCH_VLAN_PORT;
 	}
 
 	/* At startup, let's specify all physical ports as one default VLAN group */
 	for (i = 0; i < sc->info.es_nports; i++) {
 		int	ctl;
+
 		/* set PVID to default value */
 		sc->hal.api.vlan_set_pvid(sc, i, ROBOSW_DEF_VLANID);
 
@@ -241,6 +246,7 @@ robosw_attach(device_t dev)
 	}
 #endif
 
+
 	/* Turn on forwarding - done with manipulations with rules/routes */
 	err = robosw_enable_fw(dev, 1);
 	if (err != 0) {
@@ -257,7 +263,7 @@ robosw_attach(device_t dev)
 	 *  - create dummy ifnet
 	 */
 
-	for (i = 0; i < sc->info.es_nports; i++) {
+	for (i = 0; i < sc->info.es_nports - 1; i++) {
 		sc->ifp[i] = if_alloc(IFT_ETHER);
 		sc->ifp[i]->if_softc = sc;
 		sc->ifp[i]->if_flags |= IFF_UP | IFF_BROADCAST | IFF_DRV_RUNNING
@@ -288,8 +294,32 @@ robosw_attach(device_t dev)
 
 	return (0);
 fail:
-	/* TODO: detach */
+	robosw_detach(dev);
 	return (ENXIO);
+}
+
+static int
+robosw_detach(device_t dev)
+{
+	int			 phy;
+	struct robosw_softc	*sc;
+
+	sc = device_get_softc(dev);
+
+	callout_drain(&sc->callout_tick);
+
+	for (phy = 0; phy < sc->info.es_nports; phy++) {
+		if (sc->miibus[phy] != NULL)
+			device_delete_child(dev, sc->miibus[phy]);
+		if (sc->ifp[phy] != NULL)
+			if_free(sc->ifp[phy]);
+		free(sc->ifname[phy], M_DEVBUF);
+	}
+
+	bus_generic_detach(dev);
+	mtx_destroy(&sc->sc_mtx);
+
+	return (0);
 }
 
 /**************** MII interface - delegate to parents **********************/
@@ -429,7 +459,7 @@ robosw_reset(device_t dev)
 	}
 
 	err = robosw_write4(sc, SWITCH_RESET, 0xff);
-	if (err) {
+	if (err != 0) {
 		device_printf(dev, "reset: can't set reset bits\n");
 		return (err);
 	}
@@ -438,8 +468,14 @@ robosw_reset(device_t dev)
 	DELAY(10000);
 
 	err = robosw_write4(sc, SWITCH_RESET, 0x00);
-	if (err)
+	if (err != 0) {
 		device_printf(dev, "reset: can't clears reset bits\n");
+		return (err);
+	}
+
+	/* Post-reset actions */
+	if (sc->hal.api.reset != NULL)
+		err = sc->hal.api.reset(sc);
 
 	return (err);
 }
@@ -604,6 +640,50 @@ robosw_setvgroup(device_t dev, etherswitch_vlangroup_t *vg)
 
 }
 
+static int
+robosw_getconf(device_t dev, etherswitch_conf_t	*conf)
+{
+	struct robosw_softc	*sc;
+
+	sc = device_get_softc(dev);
+
+	/* Return the VLAN mode. */
+	conf->cmd = ETHERSWITCH_CONF_VLAN_MODE;
+	conf->vlan_mode = sc->vlan_mode;
+
+	return (0);
+}
+
+static int
+robosw_setconf(device_t dev, etherswitch_conf_t *conf)
+{
+	struct robosw_softc	*sc;
+
+	sc = device_get_softc(dev);
+
+	/* Set the VLAN mode. */
+	if (conf->cmd & ETHERSWITCH_CONF_VLAN_MODE) {
+		/* Check for invalid modes. */
+		if ((conf->vlan_mode & sc->info.es_vlan_caps) != conf->vlan_mode)
+			return (EINVAL);
+
+		switch (conf->vlan_mode) {
+		case ETHERSWITCH_VLAN_DOT1Q:
+			sc->vlan_mode = ETHERSWITCH_VLAN_DOT1Q;
+			sc->hal.api.vlan_enable_1q(sc, 1);
+			break;
+		case ETHERSWITCH_VLAN_PORT:
+			sc->vlan_mode = ETHERSWITCH_VLAN_PORT;
+			sc->hal.api.vlan_enable_1q(sc, 0);
+			break;
+		default:
+			sc->vlan_mode = 0;
+		}
+	}
+
+	return (0);
+}
+
 /****************** ifmedia callbacks **************************************/
 static int
 robosw_ifm_upd(struct ifnet *ifp)
@@ -642,6 +722,7 @@ static device_method_t robosw_methods [] =
 {
 	DEVMETHOD(device_probe,		robosw_probe),
 	DEVMETHOD(device_attach,	robosw_attach),
+	DEVMETHOD(device_detach,	robosw_detach),
 
 	/* bus interface */
 	DEVMETHOD(bus_add_child,	device_add_child_ordered),
@@ -663,9 +744,9 @@ static device_method_t robosw_methods [] =
 	DEVMETHOD(etherswitch_writereg,		robosw_writereg_wrapper),
 	DEVMETHOD(etherswitch_readphyreg,	robosw_readphy_wrapper),
 	DEVMETHOD(etherswitch_writephyreg,	robosw_writephy_wrapper),
+#endif
 	DEVMETHOD(etherswitch_getconf,		robosw_getconf),
 	DEVMETHOD(etherswitch_setconf,		robosw_setconf),
-#endif
 	DEVMETHOD_END
 };
 
