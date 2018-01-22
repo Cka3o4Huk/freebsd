@@ -44,13 +44,15 @@
 #include <dev/etherswitch/etherswitch.h>
 #include <dev/mii/mii.h>
 
-#define	ROBOSW_NUM_PHYS	9
-#define	ROBOSW_DEF_VLANID	1
-#define ROBOSW_DEF_MASK	0x11e
+#define	ROBOSW_NUM_PHYS		9
+
+/* VLAN 0,1 and 4095 are reserved, so default VLAN ID is 2 */
+#define	ROBOSW_DEF_VLANID	2
+#define ROBOSW_DEF_MASK		0x11e
 
 MALLOC_DECLARE(M_BCMSWITCH);
 
-#define	ROBOSWHALSIZE		6
+#define	ROBOSWHALSIZE		7
 
 typedef void (*voidfunctype) (void);
 
@@ -63,7 +65,7 @@ struct robosw_api {
 	void (* init_context) (struct robosw_softc *sc);
 
 	/* VLAN functions */
-	int (* vlan_enable)   (struct robosw_softc *sc, int on);
+	int (* vlan_enable_1q) (struct robosw_softc *sc, int on);
 	int (* vlan_get_pvid) (struct robosw_softc *sc, int port, int *pvid);
 	int (* vlan_set_pvid) (struct robosw_softc *sc, int port, int pvid);
 	int (* vlan_get_vlan_group) (struct robosw_softc *sc, int vlan_group,
@@ -84,6 +86,8 @@ struct robosw_hal {
 	struct robosw_functions	*self;
 };
 
+#define	ROBOSW_PARENT_API(hal)	(&((hal).parent->self->api))
+
 struct robosw_softc {
 	struct mtx	 sc_mtx;		/* serialize access to softc */
 	device_t	 sc_dev;
@@ -94,6 +98,7 @@ struct robosw_softc {
 	int		 cpuport;	/* which PHY is connected to the CPU */
 	int		 phymask;	/* PHYs we manage */
 	int		 numports;	/* number of ports */
+	uint32_t	 vlan_mode;	/* port-based or 1q */
 	int		 ifpport[MII_NPHY];
 	int		*portphy;
 	char		*ifname[ROBOSW_NUM_PHYS];

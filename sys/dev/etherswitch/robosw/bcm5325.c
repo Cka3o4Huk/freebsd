@@ -32,6 +32,9 @@ __FBSDID("$FreeBSD$");
 
 /*
  * Ported version of bcm5325_switch from ZRouter.org
+ * BCM5325 is 6-port managed 10/100 ROBOswitch with
+ * port-based and .1q-based VLAN with 16 entries
+ *
  */
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -46,16 +49,20 @@ __FBSDID("$FreeBSD$");
 static int	bcm5325_reset(struct robosw_softc *sc);
 static int	bcm5325_get_port_pvid(struct robosw_softc *sc, int port, int *pvid);
 static int	bcm5325_set_port_pvid(struct robosw_softc *sc, int port, int pvid);
-static int	bcm5325_vlan_enable(struct robosw_softc *sc, int on);
+static int	bcm5325_vlan_enable_1q(struct robosw_softc *sc, int on);
+static int	bcm5325_vlan_get_vlan_group(struct robosw_softc *sc, int vlan_group,
+		    int *vlan_id, int *members, int *untagged, int *forward_id);
+static int	bcm5325_vlan_set_vlan_group(struct robosw_softc *sc, int vlan_group,
+		    int vlan_id, int members, int untagged, int forward_id);
 
 struct robosw_functions bcm5325_f = {
 	.api.reset = bcm5325_reset,
 	.api.init_context = NULL,
 	.api.vlan_get_pvid = bcm5325_get_port_pvid,
 	.api.vlan_set_pvid = bcm5325_set_port_pvid,
-	.api.vlan_enable = bcm5325_vlan_enable,
-	.api.vlan_get_vlan_group = NULL,
-	.api.vlan_set_vlan_group = NULL
+	.api.vlan_enable_1q = bcm5325_vlan_enable_1q,
+	.api.vlan_get_vlan_group = bcm5325_vlan_get_vlan_group,
+	.api.vlan_set_vlan_group = bcm5325_vlan_set_vlan_group
 };
 
 struct robosw_hal bcm5325_hal = {
@@ -105,6 +112,7 @@ bcm5325_get_port_pvid(struct robosw_softc *sc, int port, int *pvid)
 		return (EBUSY);
 
 	*pvid = local_pvid & 0xfff; /* TODO: define macro for mask */
+
 	return (0);
 }
 
@@ -122,7 +130,7 @@ bcm5325_set_port_pvid(struct robosw_softc *sc, int port, int pvid)
 }
 
 static int
-bcm5325_vlan_enable(struct robosw_softc *sc, int on)
+bcm5325_vlan_enable_1q(struct robosw_softc *sc, int on)
 {
 	uint32_t	ctl0, ctl1, drop, ctl4, ctl5, sw;
 
@@ -135,6 +143,10 @@ bcm5325_vlan_enable(struct robosw_softc *sc, int on)
 	    ctl5);
 
 	if (on) {
+		/*
+		 * CTL0: enable 1q and IVL (individual VLAN learning mode)
+		 * CTL1:
+		 */
 		ctl0 |= VLAN_GLOBAL_CTL0_1Q_ENABLE |
 			    VLAN_GLOBAL_CTL0_MATCH_VIDMAC |
 			    VLAN_GLOBAL_CTL0_HASH_VIDADDR;
@@ -161,5 +173,58 @@ bcm5325_vlan_enable(struct robosw_softc *sc, int on)
 	ROBOSW_RD(SWITCH_MODE, sw, sc);
 	sw &= ~SWITCH_MODE_MANAGED;
 	ROBOSW_WR(SWITCH_MODE, sw, sc);
+	return (0);
+}
+
+static int
+bcm5325_vlan_get_vlan_group(struct robosw_softc *sc, int vlan_group,
+    int *vlan_id, int *members, int *untagged, int *forward_id)
+{
+	uint32_t		 reg;
+
+	/* Execute READ vlan information */
+	reg = VLAN_TABLE_ACCESS_RW_ENABLE | (vlan_group & VLAN_TABLE_ACCESS_VID_MASK);
+	ROBOSW_WR(VLAN_TABLE_ACCESS, reg, sc);
+	/* Read result */
+	ROBOSW_RD(VLAN_READ, reg, sc);
+
+#if 0
+	if (!(reg & VLAN_RW_VALID))
+		return (ENOENT);
+
+	printf("reg[%d] = 0x%x\n",vlan_group, reg);
+#endif
+
+	/*
+	 * ETHERSWITCH_VID_VALID:
+	 *   etherswitchcfg expects flag what VLAN is valid or not
+	 */
+	*vlan_id = ETHERSWITCH_VID_VALID | vlan_group;
+
+	*members = ROBOSW_UNSHIFT(reg, VLAN_RW_MEMBER);
+	*untagged = ROBOSW_UNSHIFT(reg, VLAN_RW_UNTAGGED);
+	/* TODO: forwarding */
+	*forward_id = 0; // RTL8366RB_VMCR_FID(vmcr);
+
+	return (0);
+}
+
+static int
+bcm5325_vlan_set_vlan_group(struct robosw_softc *sc, int vlan_group,
+    int vlan_id, int members, int untagged, int forward_id)
+{
+	uint32_t		 reg;
+
+	reg = ROBOSW_SHIFT(members, VLAN_RW_MEMBER) |
+	    ROBOSW_SHIFT(untagged, VLAN_RW_UNTAGGED) |
+	    VLAN_RW_VALID;
+
+	ROBOSW_WR(VLAN_WRITE, reg, sc);
+
+	/* Execute READ vlan information */
+	reg = VLAN_TABLE_ACCESS_RW_ENABLE | VLAN_TABLE_ACCESS_WRITE |
+	    (vlan_group & VLAN_TABLE_ACCESS_VID_MASK);
+	ROBOSW_WR(VLAN_TABLE_ACCESS, reg, sc);
+
 	return (0);
 }
