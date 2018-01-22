@@ -52,6 +52,7 @@
 #define ROBOSWDUMPREG(_reg)						\
 	ROBOSWPRINT(dev) #_reg "=%08x\n", robosw_read4(sc, _reg))
 
+#define	ROBOSWPORTBITS	"\020\1p0\2p1\3p2\4p3\5p4\6p5\7p6"
 #define	ROBOSWDUMPVLAN(_dev, _start, _end, _prefix)			\
 	do {								\
 		struct etherswitch_vlangroup 	vg;			\
@@ -59,11 +60,13 @@
 		for(int i = _start; i < _end; i++) {			\
 			vg.es_vlangroup = i;				\
 			robosw_err = robosw_getvgroup(_dev, &vg);	\
-			ROBOSWPRINT(_dev) _prefix "[%d] err=%d; "	\
-					" members=%x untagged=%x\n", i,	\
+			ROBOSWPRINT(_dev) _prefix "[%d] err=%d;\t"	\
+					"members=%b\tuntagged=%b\n", i,	\
 					robosw_err,			\
 					vg.es_member_ports,		\
-					vg.es_untagged_ports);		\
+					ROBOSWPORTBITS,			\
+					vg.es_untagged_ports,		\
+					ROBOSWPORTBITS);		\
 		}							\
 	} while (0);
 
@@ -569,6 +572,6 @@ Page PRT, Address 34h-35h 	DPM Interrupt Register
 #define		PORT_SUPPRESSION_CTL_MCAST_RATE_30ps	0x02
 #define		PORT_SUPPRESSION_CTL_MCAST_RATE_40ps	0x03
 
-#define	ROBOSW_DEF_NPORTS	5
+#define	ROBOSW_DEF_NPORTS	6
 #define	ROBOSW_DEF_NVLANS	16
 #endif /* _ROBOSWSWITCHREG_H_ */
