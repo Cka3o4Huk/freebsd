@@ -42,17 +42,42 @@ static int	bcm53115_set_vlan_group(struct robosw_softc *sc, int vlan_group,
 static int 	bcm53115_reset(struct robosw_softc *sc);
 static int 	bcm53115_vlan_enable_1q(struct robosw_softc *sc, int on);
 
+static uint32_t	bcm53115_mib_get(struct robosw_softc *sc, int port, int metric);
+
 struct robosw_functions bcm53115_f = {
 	.api.reset = bcm53115_reset,
+	.api.mib_get = bcm53115_mib_get,
 	.api.vlan_enable_1q = bcm53115_vlan_enable_1q,
 	.api.vlan_get_vlan_group = bcm53115_get_vlan_group,
 	.api.vlan_set_vlan_group = bcm53115_set_vlan_group
 };
 
 struct robosw_hal bcm53115_hal = {
+	.chipname = "BCM53115",
 	.parent = &bcm5325_hal,
 	.self = &bcm53115_f
 };
+
+static uint32_t
+bcm53115_mib_get(struct robosw_softc *sc, int port, int metric)
+{
+	switch (metric) {
+	case ROBOSW_MIB_GOODRXPKTS:
+		return
+		   (robosw_read4(sc, MIB_53115_RX_UnicastPkts(port)) +
+		    robosw_read4(sc, MIB_53115_RX_BroadcastPkts(port)) +
+		    robosw_read4(sc, MIB_53115_RX_MulticastPkts(port)) +
+		    robosw_read4(sc, MIB_53115_RX_DropPkts(port)));
+	case ROBOSW_MIB_GOODTXPKTS:
+		return
+		   (robosw_read4(sc, MIB_53115_TX_UnicastPkts(port)) +
+		    robosw_read4(sc, MIB_53115_TX_BroadcastPkts(port)) +
+		    robosw_read4(sc, MIB_53115_TX_MulticastPkts(port)) +
+		    robosw_read4(sc, MIB_53115_TX_DropPkts(port)));
+	default:
+		return (0);
+	}
+}
 
 static int
 bcm53115_reset(struct robosw_softc *sc)
@@ -93,11 +118,11 @@ bcm53115_vlan_enable_1q(struct robosw_softc *sc, int on)
 			    VLAN_GLOBAL_CTL0_HASH_VIDADDR;
 		ctl1 |= VLAN_GLOBAL_CTL1_MCAST_UNTAGMAP_CHECK |
 			    VLAN_GLOBAL_CTL1_MCAST_FWDMAP_CHECK;
-		ctl4 |= VLAN_GLOBAL_CTL4_DROP_VID_VIOLATION;
-		ctl5 |= VLAN_GLOBAL_CTL5_DROP_VTAB_MISS;
+		//ctl4 |= VLAN_GLOBAL_CTL4_DROP_VID_VIOLATION;
+		//ctl5 |= VLAN_GLOBAL_CTL5_DROP_VTAB_MISS;
 
 		/* b53115-specific: TODO: add support of 4095 vlans */
-		ctl5 &= ~VLAN_GLOBAL_CTL5_VID_4095_ENABLE;
+		//ctl5 &= ~VLAN_GLOBAL_CTL5_VID_4095_ENABLE;
 	} else {
 		ctl0 &= ~(VLAN_GLOBAL_CTL0_1Q_ENABLE |
 			    VLAN_GLOBAL_CTL0_MATCH_VIDMAC |
@@ -105,7 +130,7 @@ bcm53115_vlan_enable_1q(struct robosw_softc *sc, int on)
 		ctl1 &= ~(VLAN_GLOBAL_CTL1_MCAST_UNTAGMAP_CHECK |
 			    VLAN_GLOBAL_CTL1_MCAST_FWDMAP_CHECK);
 		ctl5 &= ~VLAN_GLOBAL_CTL5_DROP_VTAB_MISS;
-
+		ctl4 &= ~VLAN_GLOBAL_CTL4_DROP_VID_VIOLATION;
 		/* b53115-specific */
 		ctl4 |= VLAN_GLOBAL_CTL4_FWD_TO_MII;
 		ctl5 &= ~VLAN_GLOBAL_CTL5_VID_4095_ENABLE;
@@ -116,8 +141,7 @@ bcm53115_vlan_enable_1q(struct robosw_softc *sc, int on)
 
 	ROBOSW_WR(VLAN_GLOBAL_CTL0, ctl0, sc);
 	ROBOSW_WR(VLAN_GLOBAL_CTL1, ctl1, sc);
-	/* b53115-specific */
-	ROBOSW_WR(VLAN_DROP_UNTAGGED, drop, sc);
+	//ROBOSW_WR(VLAN_DROP_UNTAGGED, drop, sc);
 	ROBOSW_WR(VLAN_GLOBAL_CTL4_531xx, ctl4, sc);
 	ROBOSW_WR(VLAN_GLOBAL_CTL5_531xx, ctl5, sc);
 

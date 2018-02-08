@@ -46,6 +46,9 @@ __FBSDID("$FreeBSD$");
 #include "robosw_reg.h"
 #include "robosw_hal.h"
 
+#define	BCM5325_PBVLAN_PHYPORT_MASK	0x00F
+#define	BCM5325_PBVLAN_MIIPORT_MASK	0x100
+
 static int	bcm5325_reset(struct robosw_softc *sc);
 static int	bcm5325_get_port_pvid(struct robosw_softc *sc, int port, int *pvid);
 static int	bcm5325_set_port_pvid(struct robosw_softc *sc, int port, int pvid);
@@ -55,20 +58,44 @@ static int	bcm5325_vlan_get_vlan_group(struct robosw_softc *sc, int vlan_group,
 static int	bcm5325_vlan_set_vlan_group(struct robosw_softc *sc, int vlan_group,
 		    int vlan_id, int members, int untagged, int forward_id);
 
+static int	bcm5325_vlan_get_pvlan_group(struct robosw_softc *sc, int vlan_group,
+		    int *vlan_id, int *members, int *untagged, int *forward_id);
+static int	bcm5325_vlan_set_pvlan_group(struct robosw_softc *sc, int vlan_group,
+		    int vlan_id, int members, int untagged, int forward_id);
+
+static uint32_t	bcm5325_mib_get(struct robosw_softc *sc, int port, int metric);
+
 struct robosw_functions bcm5325_f = {
 	.api.reset = bcm5325_reset,
 	.api.init_context = NULL,
+	.api.mib_get = bcm5325_mib_get,
 	.api.vlan_get_pvid = bcm5325_get_port_pvid,
 	.api.vlan_set_pvid = bcm5325_set_port_pvid,
 	.api.vlan_enable_1q = bcm5325_vlan_enable_1q,
 	.api.vlan_get_vlan_group = bcm5325_vlan_get_vlan_group,
-	.api.vlan_set_vlan_group = bcm5325_vlan_set_vlan_group
+	.api.vlan_set_vlan_group = bcm5325_vlan_set_vlan_group,
+	.api.vlan_get_pvlan_group = bcm5325_vlan_get_pvlan_group,
+	.api.vlan_set_pvlan_group = bcm5325_vlan_set_pvlan_group
 };
 
 struct robosw_hal bcm5325_hal = {
+	.chipname = "BCM5325",
 	.parent = NULL,
 	.self = &bcm5325_f
 };
+
+static uint32_t
+bcm5325_mib_get(struct robosw_softc *sc, int port, int metric)
+{
+	switch (metric) {
+	case ROBOSW_MIB_GOODRXPKTS:
+		return robosw_read4(sc, MIB_5325_RX_GoodPkts(port));
+	case ROBOSW_MIB_GOODTXPKTS:
+		return robosw_read4(sc, MIB_5325_TX_GoodPkts(port));
+	default:
+		return (0);
+	}
+}
 
 static int
 bcm5325_reset(struct robosw_softc *sc)
@@ -83,6 +110,9 @@ bcm5325_reset(struct robosw_softc *sc)
 		device_printf(sc->sc_dev, "Unable to set RvMII mode\n");
 		return (ENXIO);
 	}
+
+	/* MIB provides 2 groups for choice - use group 0 for all ports */
+	robosw_write4(sc, RMON_MIB_STEERING, 0);
 
 	/* Bit 4 enables reverse MII mode */
 	if (!(reg & PORTMII_STATUS_REVERSE_MII))
@@ -116,7 +146,7 @@ bcm5325_get_port_pvid(struct robosw_softc *sc, int port, int *pvid)
 	return (0);
 }
 
-int
+static int
 bcm5325_set_port_pvid(struct robosw_softc *sc, int port, int pvid)
 {
 
@@ -138,9 +168,12 @@ bcm5325_vlan_enable_1q(struct robosw_softc *sc, int on)
 
 	ROBOSW_RD(VLAN_GLOBAL_CTL0, ctl0, sc);
 	ROBOSW_RD(VLAN_GLOBAL_CTL1, ctl1, sc);
+	ROBOSW_RD(VLAN_GLOBAL_CTL4, ctl4, sc);
+	ROBOSW_RD(VLAN_GLOBAL_CTL5, ctl5, sc);
 
-	device_printf(sc->sc_dev, "ctl <=: %x/%x/%x/%x\n", ctl0, ctl1, ctl4,
-	    ctl5);
+	if (sc->sc_debug)
+		device_printf(sc->sc_dev, "ctl <=: %x/%x/%x/%x\n", ctl0, ctl1,
+		    ctl4, ctl5);
 
 	if (on) {
 		/*
@@ -150,25 +183,31 @@ bcm5325_vlan_enable_1q(struct robosw_softc *sc, int on)
 		ctl0 |= VLAN_GLOBAL_CTL0_1Q_ENABLE |
 			    VLAN_GLOBAL_CTL0_MATCH_VIDMAC |
 			    VLAN_GLOBAL_CTL0_HASH_VIDADDR;
-		ctl1 |= VLAN_GLOBAL_CTL1_MCAST_UNTAGMAP_CHECK |
+		ctl1 |= VLAN_GLOBAL_CTL1_MCAST_TAGGING |
+			VLAN_GLOBAL_CTL1_MCAST_UNTAGMAP_CHECK |
 			    VLAN_GLOBAL_CTL1_MCAST_FWDMAP_CHECK;
-		ctl4 |= VLAN_GLOBAL_CTL4_DROP_VID_VIOLATION;
-		ctl5 |= VLAN_GLOBAL_CTL5_DROP_VTAB_MISS;
+		//ctl4 |= VLAN_GLOBAL_CTL4_DROP_VID_VIOLATION;
+		//ctl5 |= VLAN_GLOBAL_CTL5_DROP_VTAB_MISS;
 	} else {
 		ctl0 &= ~(VLAN_GLOBAL_CTL0_1Q_ENABLE |
 			    VLAN_GLOBAL_CTL0_MATCH_VIDMAC |
 			    VLAN_GLOBAL_CTL0_HASH_VIDADDR);
 		ctl1 &= ~(VLAN_GLOBAL_CTL1_MCAST_UNTAGMAP_CHECK |
 			    VLAN_GLOBAL_CTL1_MCAST_FWDMAP_CHECK);
+		ctl4 &= ~VLAN_GLOBAL_CTL4_DROP_VID_VIOLATION;
 		ctl5 &= ~VLAN_GLOBAL_CTL5_DROP_VTAB_MISS;
 
 	}
 
-	device_printf(sc->sc_dev, "ctl =>: %x/%x/%x/%x\n", ctl0, ctl1, ctl4,
-	    ctl5);
+	if (sc->sc_debug)
+		device_printf(sc->sc_dev, "ctl =>: %x/%x/%x/%x\n", ctl0, ctl1,
+		    ctl4, ctl5);
 
 	ROBOSW_WR(VLAN_GLOBAL_CTL0, ctl0, sc);
 	ROBOSW_WR(VLAN_GLOBAL_CTL1, ctl1, sc);
+	//ROBOSW_WR(VLAN_DROP_UNTAGGED, 0, sc);
+	ROBOSW_WR(VLAN_GLOBAL_CTL4, ctl4, sc);
+	ROBOSW_WR(VLAN_GLOBAL_CTL5, ctl5, sc);
 
 	ROBOSW_RD(SWITCH_MODE, sw, sc);
 	sw &= ~SWITCH_MODE_MANAGED;
@@ -188,18 +227,17 @@ bcm5325_vlan_get_vlan_group(struct robosw_softc *sc, int vlan_group,
 	/* Read result */
 	ROBOSW_RD(VLAN_READ, reg, sc);
 
-#if 0
-	if (!(reg & VLAN_RW_VALID))
-		return (ENOENT);
+	if (sc->sc_debug)
+		printf("read: dot1q[%d] = 0x%x\n", vlan_group, reg);
 
-	printf("reg[%d] = 0x%x\n",vlan_group, reg);
-#endif
+	*vlan_id = vlan_group | (ROBOSW_UNSHIFT(reg, VLAN_READ_HIGHVID) << 4) ;
 
 	/*
 	 * ETHERSWITCH_VID_VALID:
 	 *   etherswitchcfg expects flag what VLAN is valid or not
 	 */
-	*vlan_id = ETHERSWITCH_VID_VALID | vlan_group;
+	if (reg & VLAN_RW_VALID)
+		*vlan_id |= ETHERSWITCH_VID_VALID;
 
 	*members = ROBOSW_UNSHIFT(reg, VLAN_RW_MEMBER);
 	*untagged = ROBOSW_UNSHIFT(reg, VLAN_RW_UNTAGGED);
@@ -216,15 +254,75 @@ bcm5325_vlan_set_vlan_group(struct robosw_softc *sc, int vlan_group,
 	uint32_t		 reg;
 
 	reg = ROBOSW_SHIFT(members, VLAN_RW_MEMBER) |
-	    ROBOSW_SHIFT(untagged, VLAN_RW_UNTAGGED) |
-	    VLAN_RW_VALID;
+	    ROBOSW_SHIFT(untagged, VLAN_RW_UNTAGGED);
+
+	reg |= VLAN_RW_VALID;
+
+	if (sc->sc_debug)
+		printf("write: dot1q[%d / 0x%x] = 0x%x\n", vlan_group, vlan_id, reg);
 
 	ROBOSW_WR(VLAN_WRITE, reg, sc);
 
-	/* Execute READ vlan information */
 	reg = VLAN_TABLE_ACCESS_RW_ENABLE | VLAN_TABLE_ACCESS_WRITE |
-	    (vlan_group & VLAN_TABLE_ACCESS_VID_MASK);
+	    (vlan_id & ETHERSWITCH_VID_MASK);
 	ROBOSW_WR(VLAN_TABLE_ACCESS, reg, sc);
+
+	return (0);
+}
+
+static int
+bcm5325_vlan_get_pvlan_group(struct robosw_softc *sc, int vlan_group,
+		    int *vlan_id, int *members, int *untagged, int *forward_id)
+{
+	uint32_t	 value;
+	int		 reg;
+
+	reg = (vlan_group & ETHERSWITCH_VID_MASK);
+
+	/* Read port-based VLAN register */
+	ROBOSW_RD(PBVLAN_ALLOWED_PORTS(reg), value, sc);
+
+	if (sc->sc_debug)
+		printf("read: pbvlan[%d] = 0x%x\n", vlan_group, value);
+
+	/* Remap port MII -> last port */
+	*vlan_id = (reg == sc->cpuport) ? (sc->info.es_nports - 1) : reg;
+
+	/* etherswitchcfg expects flag ETHERSWITCH_VID_VALID what VLAN is valid */
+	if (value & PBVLAN_ALLOWED_PORTS_MASK)
+		*vlan_id |= ETHERSWITCH_VID_VALID;
+
+	/* MII port uses bit 8*/
+	*members = (value & BCM5325_PBVLAN_PHYPORT_MASK);
+	if (value & BCM5325_PBVLAN_MIIPORT_MASK)
+		*members |= (1 << (sc->info.es_nports - 1));
+
+	*untagged = *members;
+
+	return (0);
+}
+
+static int
+bcm5325_vlan_set_pvlan_group(struct robosw_softc *sc, int vlan_group,
+		    int vlan_id, int members, int untagged, int forward_id)
+{
+	uint32_t	 value;
+	int		 reg;
+
+	reg = (vlan_group & ETHERSWITCH_VID_MASK);
+	ROBOSW_RD(PBVLAN_ALLOWED_PORTS(reg), value, sc);
+
+	/* We ignore vlan_id redefinition for port-based VLANs */
+	value &= ~(BCM5325_PBVLAN_PHYPORT_MASK | BCM5325_PBVLAN_MIIPORT_MASK);
+	value |= (members & BCM5325_PBVLAN_PHYPORT_MASK);
+	if (members & (1 << (sc->info.es_nports - 1)))
+		value |= BCM5325_PBVLAN_MIIPORT_MASK;
+
+	if (sc->sc_debug)
+		printf("write: pbvlan[%d] = 0x%x\n", vlan_group, value);
+
+	/* Read port-based VLAN register */
+	ROBOSW_WR(PBVLAN_ALLOWED_PORTS(reg), value, sc);
 
 	return (0);
 }

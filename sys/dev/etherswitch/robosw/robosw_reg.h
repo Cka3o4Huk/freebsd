@@ -402,6 +402,22 @@ Page PRT, Address 1Eh-1Fh 	DPM Register
 Page PRT, Address 34h-35h 	DPM Interrupt Register
 */
 
+/* 5325 */
+#define	MIB_5325_TX_GoodPkts(_p)	(S2 | PAGE(0x20 + (_p)) | 0x00)
+#define	MIB_5325_TX_UnicastPkts(_p)	(S2 | PAGE(0x20 + (_p)) | 0x02)
+#define	MIB_5325_RX_GoodPkts(_p)	(S2 | PAGE(0x20 + (_p)) | 0x04)
+#define	MIB_5325_RX_UnicastPkts(_p)	(S2 | PAGE(0x20 + (_p)) | 0x06)
+
+/* 53115 */
+#define	MIB_53115_TX_DropPkts(_p)	(S4 | PAGE(0x20 + (_p)) | 0x08)
+#define	MIB_53115_TX_UnicastPkts(_p)	(S4 | PAGE(0x20 + (_p)) | 0x18)
+#define	MIB_53115_TX_MulticastPkts(_p)	(S4 | PAGE(0x20 + (_p)) | 0x14)
+#define	MIB_53115_TX_BroadcastPkts(_p)	(S4 | PAGE(0x20 + (_p)) | 0x10)
+#define	MIB_53115_RX_DropPkts(_p)	(S4 | PAGE(0x20 + (_p)) | 0x90)
+#define	MIB_53115_RX_UnicastPkts(_p)	(S4 | PAGE(0x20 + (_p)) | 0x94)
+#define	MIB_53115_RX_MulticastPkts(_p)	(S4 | PAGE(0x20 + (_p)) | 0x98)
+#define	MIB_53115_RX_BroadcastPkts(_p)	(S4 | PAGE(0x20 + (_p)) | 0x9C)
+
 #define	MIB_TX_OCTETS(_p)		(S8 | PAGE(0x20 + (_p)) | 0x00)
 #define	MIB_TX_DROPS(_p)		(S4 | PAGE(0x20 + (_p)) | 0x08)
 #define	MIB_TX_DropPkts(_p)		(S4 | PAGE(0x20 + (_p)) | 0x08)
@@ -474,6 +490,7 @@ Page PRT, Address 34h-35h 	DPM Interrupt Register
 
 /* PAGE31, Port Based VLAN */
 #define	PBVLAN_ALLOWED_PORTS(_p)	(S2 | PAGE(0x31) | ((_p) * 2))
+#define 	PBVLAN_ALLOWED_PORTS_MASK	0x1FF
 
 #define	VLAN_GLOBAL_CTL0		(S1 | PAGE(0x34) | 0x00)
 #define		VLAN_GLOBAL_CTL0_1Q_ENABLE	0x80
@@ -553,6 +570,9 @@ Page PRT, Address 34h-35h 	DPM Interrupt Register
 #define		VLAN_RW_UNTAGGED_5395_MASK	0x3fe00
 
 #define	VLAN_READ			(S4 | PAGE(0x34) | 0x0C)
+#define		VLAN_READ_HIGHVID_MASK		0xff000
+#define		VLAN_READ_HIGHVID_SHIFT		12
+
 /* XXX: END Valid for BCM535x */
 #define	VLAN_DEFAULT_PORT_TAG(_p)	(S2 | PAGE(0x34) | (0x10 + ((_p) * 2)))
 #define	VLAN_PRIORITY_REMAP		(S3 | PAGE(0x34) | 0x20)
