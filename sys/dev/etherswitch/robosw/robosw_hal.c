@@ -74,6 +74,7 @@ robosw_hal_init(struct robosw_softc *sc)
 	struct robosw_hal		*inithal;
 
 	inithal = robosw_hal_lookup(sc);
+	sc->chipname = inithal->chipname;
 
 	scfunc = &sc->hal;
 	for (;;) {
@@ -122,12 +123,9 @@ robosw_hal_lookup(struct robosw_softc *sc)
 
 	for(; ptr->id != 0; ptr++)
 		if (ptr->id == switchid) {
-			device_printf(dev, "found %s switch BCM%x\n", map_type,
-			    ptr->id);
 			return ptr->hal;
 		}
 
 	/* HAL isn't found in mapping, use default */
-	device_printf(dev, "found default switch BCM5325\n");
 	return (&bcm5325_hal);
 }

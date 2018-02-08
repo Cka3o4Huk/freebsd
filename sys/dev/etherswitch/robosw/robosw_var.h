@@ -52,7 +52,7 @@
 
 MALLOC_DECLARE(M_BCMSWITCH);
 
-#define	ROBOSWHALSIZE		7
+#define	ROBOSWHALSIZE		10
 
 typedef void (*voidfunctype) (void);
 
@@ -64,7 +64,16 @@ struct robosw_api {
 	int (* reset) (struct robosw_softc *sc);
 	void (* init_context) (struct robosw_softc *sc);
 
-	/* VLAN functions */
+	/* MIB data */
+	uint32_t (* mib_get) (struct robosw_softc *sc, int port, int metric_id);
+
+	/* Port-based VLAN functions */
+	int (* vlan_get_pvlan_group) (struct robosw_softc *sc, int vlan_group,
+	    int *vlan_id, int *members, int *untagged, int *forward_id);
+	int (* vlan_set_pvlan_group) (struct robosw_softc *sc, int vlan_group,
+	    int vlan_id, int members, int untagged, int forward_id);
+
+	/* .1q VLAN functions */
 	int (* vlan_enable_1q) (struct robosw_softc *sc, int on);
 	int (* vlan_get_pvid) (struct robosw_softc *sc, int port, int *pvid);
 	int (* vlan_set_pvid) (struct robosw_softc *sc, int port, int pvid);
@@ -82,6 +91,7 @@ struct robosw_functions {
 };
 
 struct robosw_hal {
+	char			*chipname;
 	struct robosw_hal	*parent;
 	struct robosw_functions	*self;
 };
@@ -94,6 +104,7 @@ struct robosw_softc {
 	device_t	 sc_parent;
 	int		 sc_full_reset;	/* see possible values below */
 	int		 sc_debug; 	/* debug */
+	char		*chipname;	/* chip id */
 	int		 media;		/* cpu port media */
 	int		 cpuport;	/* which PHY is connected to the CPU */
 	int		 phymask;	/* PHYs we manage */
@@ -114,6 +125,10 @@ struct robosw_softc {
 #define	ROBOSW_TRYRESET		1	/* 0b01 - try reset */
 #define	ROBOSW_RESETDONE	2	/* 0b10 - reset done */
 #define	ROBOSW_RESETFAIL	3	/* 0b11 - reset failed */
+
+/* MIB metrics */
+#define	ROBOSW_MIB_GOODRXPKTS	0
+#define	ROBOSW_MIB_GOODTXPKTS	1
 
 #define ROBOSW_LOCK(_sc)			mtx_lock(&(_sc)->sc_mtx)
 #define ROBOSW_UNLOCK(_sc)			mtx_unlock(&(_sc)->sc_mtx)

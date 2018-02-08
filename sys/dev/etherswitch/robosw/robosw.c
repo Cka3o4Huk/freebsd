@@ -41,6 +41,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/malloc.h>
 #include <sys/lock.h>
 #include <sys/mutex.h>
+#include <sys/sysctl.h>
 /* Required for etherswitch */
 #include <sys/socket.h>
 #include <sys/sockio.h>
@@ -104,6 +105,9 @@ static etherswitch_info_t*	robosw_getinfo(device_t dev);
 static int	robosw_ifm_upd(struct ifnet *ifp);
 static void	robosw_ifm_sts(struct ifnet *ifp, struct ifmediareq *ifmr);
 
+/* MIB */
+static int	robosw_mib(SYSCTL_HANDLER_ARGS);
+
 /*********************** Implementation ************************************/
 
 static int
@@ -134,8 +138,11 @@ static int
 robosw_attach(device_t dev)
 {
 	struct robosw_softc	*sc;
+	struct sysctl_ctx_list	*ctx;
+	struct sysctl_oid	*tree;
 	int			 i, err;
 	char 			 name[IFNAMSIZ];
+
 #if 0
 	uint32_t		 reg;
 #endif
@@ -150,6 +157,11 @@ robosw_attach(device_t dev)
 	sc->sc_debug = bootverbose;
 
 	mtx_init(&sc->sc_mtx, "robosw", NULL, MTX_DEF);
+
+	ctx = device_get_sysctl_ctx(dev);
+	tree = device_get_sysctl_tree(dev);
+	SYSCTL_ADD_UINT(ctx, SYSCTL_CHILDREN(tree), OID_AUTO,
+	    "debug", CTLFLAG_RW, &sc->sc_debug, 0, "control debugging printfs");
 
 	/*
 	 * Initialize HAL (by switch ID and chipcommon ID)
@@ -168,12 +180,15 @@ robosw_attach(device_t dev)
 	 */
 	sc->info.es_nports = ROBOSW_DEF_NPORTS;
 	sc->info.es_nvlangroups = ROBOSW_DEF_NVLANS;
-	sc->info.es_vlan_caps = ETHERSWITCH_VLAN_PORT;
+	sc->info.es_vlan_caps = 0;
+	sc->cpuport = PORTMII;
 
 	if(sc->hal.api.init_context != NULL)
 		sc->hal.api.init_context(sc);
 
-	strcpy(sc->info.es_name, "Broadcom RoboSwitch");
+	snprintf(sc->info.es_name, ETHERSWITCH_NAMEMAX,
+	    "Broadcom RoboSwitch %s", sc->chipname);
+	device_printf(dev, "found switch %s\n", sc->chipname);
 
 	ROBOSWDUMP;
 
@@ -192,6 +207,12 @@ robosw_attach(device_t dev)
 		device_printf(dev, "reset failed\n");
 	}
 
+	/* Does HAL support Port-based VLAN? */
+	if (sc->hal.api.vlan_set_pvlan_group != NULL) {
+		sc->info.es_vlan_caps |= ETHERSWITCH_VLAN_PORT;
+		sc->vlan_mode = ETHERSWITCH_VLAN_PORT;
+	}
+
 	if ((sc->hal.api.vlan_enable_1q != NULL) &&
 	    (sc->hal.api.vlan_set_vlan_group != NULL))
 	{
@@ -200,20 +221,28 @@ robosw_attach(device_t dev)
 		/* Enable VLAN support and set defaults */
 		sc->hal.api.vlan_enable_1q(sc, 1);
 		sc->vlan_mode = ETHERSWITCH_VLAN_DOT1Q;
-		sc->hal.api.vlan_set_vlan_group(sc, ROBOSW_DEF_VLANID, ROBOSW_DEF_VLANID,
-		    ROBOSW_DEF_MASK, ROBOSW_DEF_MASK, 0);
-	} else {
-		device_printf(dev, "Disable 1q due to lack of API\n");
-		sc->hal.api.vlan_enable_1q(sc, 0);
-		sc->vlan_mode = ETHERSWITCH_VLAN_PORT;
+		sc->hal.api.vlan_set_vlan_group(sc, ROBOSW_DEF_VLANID,
+		    ROBOSW_DEF_VLANID | ETHERSWITCH_VID_VALID, ROBOSW_DEF_MASK,
+		    ROBOSW_DEF_MASK, 0);
+
+		/*
+		 * At startup, let's specify all physical ports as one default
+		 * VLAN group
+		 */
+		for (i = 0; i < sc->info.es_nports; i++)
+			/* set PVID to default value */
+			sc->hal.api.vlan_set_pvid(sc, i, ROBOSW_DEF_VLANID);
+	}
+
+	if ((sc->info.es_vlan_caps & (ETHERSWITCH_VLAN_PORT | ETHERSWITCH_VLAN_DOT1Q)) == 0)
+	{
+		device_printf(dev, "device driver has no support any kind of VLANs\n");
+		goto fail;
 	}
 
 	/* At startup, let's specify all physical ports as one default VLAN group */
 	for (i = 0; i < sc->info.es_nports; i++) {
 		int	ctl;
-
-		/* set PVID to default value */
-		sc->hal.api.vlan_set_pvid(sc, i, ROBOSW_DEF_VLANID);
 
 		/* enable Tx/Rx on physical port */
 		ctl = robosw_read4(sc, PORT_CTL(i));
@@ -281,6 +310,39 @@ robosw_attach(device_t dev)
 			    err);
 			goto fail;
 		}
+
+		if (sc->hal.api.mib_get == NULL)
+			continue;
+
+		snprintf(name, IFNAMSIZ, "port%drx", i);
+
+		SYSCTL_ADD_PROC(ctx, SYSCTL_CHILDREN(tree), OID_AUTO,
+		    name, CTLFLAG_RD | CTLTYPE_U16, sc,
+		    (i << 4) | ROBOSW_MIB_GOODRXPKTS, robosw_mib, "I",
+		    "number of packets received by port");
+
+		snprintf(name, IFNAMSIZ, "port%dtx", i);
+
+		SYSCTL_ADD_PROC(ctx, SYSCTL_CHILDREN(tree), OID_AUTO,
+		    name, CTLFLAG_RD | CTLTYPE_U16, sc,
+		    (i << 4) | ROBOSW_MIB_GOODTXPKTS, robosw_mib, "I",
+		    "number of packets sent by port");
+	}
+
+	if (sc->hal.api.mib_get != NULL) {
+		snprintf(name, IFNAMSIZ, "cpu_rx");
+
+		SYSCTL_ADD_PROC(ctx, SYSCTL_CHILDREN(tree), OID_AUTO,
+		    name, CTLFLAG_RD | CTLTYPE_U16, sc,
+		    (sc->cpuport << 4) | ROBOSW_MIB_GOODRXPKTS,
+		    robosw_mib, "I", "number of packets received by port");
+
+		snprintf(name, IFNAMSIZ, "cpu_tx");
+
+		SYSCTL_ADD_PROC(ctx, SYSCTL_CHILDREN(tree), OID_AUTO,
+		    name, CTLFLAG_RD | CTLTYPE_U16, sc,
+		    (sc->cpuport << 4)| ROBOSW_MIB_GOODTXPKTS,
+		    robosw_mib, "I", "number of packets sent by port");
 	}
 
 	bus_generic_probe(dev);
@@ -508,6 +570,22 @@ robosw_enable_fw(device_t dev, uint32_t forward)
 	return 0;
 }
 
+uint16_t out = 212;
+
+static int
+robosw_mib(SYSCTL_HANDLER_ARGS)
+{
+	struct robosw_softc	*sc;
+	uint32_t		 value;
+	int			 port, metric;
+
+	sc = (struct robosw_softc *) arg1;
+	port = (arg2 >> 4);
+	metric = (arg2 & 0xF);
+	value = sc->hal.api.mib_get(sc, port, metric);
+	return (sysctl_handle_16(oidp, NULL, value, req));
+}
+
 /****************** EtherSwitch interface **********************************/
 static etherswitch_info_t*
 robosw_getinfo(device_t dev)
@@ -611,11 +689,19 @@ robosw_getvgroup(device_t dev, etherswitch_vlangroup_t *vg)
 	if (sc->hal.api.vlan_get_vlan_group == NULL)
 		return (ENXIO);
 
-	err = sc->hal.api.vlan_get_vlan_group(sc, vg->es_vlangroup,
-			&vg->es_vid,
-			&vg->es_member_ports,
-			&vg->es_untagged_ports,
-			&vg->es_fid);
+	if (sc->vlan_mode == ETHERSWITCH_VLAN_PORT) {
+		err = sc->hal.api.vlan_get_pvlan_group(sc, vg->es_vlangroup,
+				&vg->es_vid,
+				&vg->es_member_ports,
+				&vg->es_untagged_ports,
+				&vg->es_fid);
+	} else {
+		err = sc->hal.api.vlan_get_vlan_group(sc, vg->es_vlangroup,
+				&vg->es_vid,
+				&vg->es_member_ports,
+				&vg->es_untagged_ports,
+				&vg->es_fid);
+	}
 
 	return (err);
 }
@@ -631,11 +717,20 @@ robosw_setvgroup(device_t dev, etherswitch_vlangroup_t *vg)
 	if (sc->hal.api.vlan_set_vlan_group == NULL)
 		return (ENXIO);
 
-	err = sc->hal.api.vlan_set_vlan_group(sc, vg->es_vlangroup,
-			vg->es_vid,
-			vg->es_member_ports,
-			vg->es_untagged_ports,
-			vg->es_fid);
+	if (sc->vlan_mode == ETHERSWITCH_VLAN_PORT) {
+		err = sc->hal.api.vlan_set_pvlan_group(sc, vg->es_vlangroup,
+				vg->es_vid,
+				vg->es_member_ports,
+				vg->es_untagged_ports,
+				vg->es_fid);
+	} else {
+		err = sc->hal.api.vlan_set_vlan_group(sc, vg->es_vlangroup,
+				vg->es_vid,
+				vg->es_member_ports,
+				vg->es_untagged_ports,
+				vg->es_fid);
+	}
+
 	return (err);
 
 }
