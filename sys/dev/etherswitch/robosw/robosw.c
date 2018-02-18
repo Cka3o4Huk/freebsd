@@ -570,8 +570,6 @@ robosw_enable_fw(device_t dev, uint32_t forward)
 	return 0;
 }
 
-uint16_t out = 212;
-
 static int
 robosw_mib(SYSCTL_HANDLER_ARGS)
 {
