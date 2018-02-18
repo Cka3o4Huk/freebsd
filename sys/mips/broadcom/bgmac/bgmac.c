@@ -44,6 +44,7 @@
 #include <sys/socket.h>
 #include <sys/sockio.h>
 #include <sys/mutex.h>
+#include <sys/sysctl.h>
 
 #include <sys/kdb.h>
 
@@ -137,6 +138,9 @@ static int	bgmac_if_ioctl(if_t ifp, u_long command, caddr_t data);
 static int	bgmac_if_mediachange(struct ifnet *ifp);
 static void	bgmac_if_mediastatus(struct ifnet *ifp, struct ifmediareq *ifmr);
 
+/* MIB */
+static int	bgmac_mib(SYSCTL_HANDLER_ARGS);
+
 /****************************************************************************
  * Implementation
  ****************************************************************************/
@@ -168,6 +172,9 @@ bgmac_attach(device_t dev)
 	struct bgmac_softc	*sc;
 	struct resource		*res[BGMAC_MAX_RSPEC];
 	int			 error;
+	struct sysctl_ctx_list	*ctx;
+	struct sysctl_oid	*tree;
+	char 			 name[IFNAMSIZ];
 
 	sc = device_get_softc(dev);
 	sc->dev = dev;
@@ -233,6 +240,23 @@ bgmac_attach(device_t dev)
 	/* Attach MDIO bus to discover ethernet switch */
 	sc->mdio = device_add_child(dev, "mdio", -1);
 	bus_generic_attach(dev);
+
+	ctx = device_get_sysctl_ctx(dev);
+	tree = device_get_sysctl_tree(dev);
+
+	snprintf(name, IFNAMSIZ, "cpu_rx");
+
+	SYSCTL_ADD_PROC(ctx, SYSCTL_CHILDREN(tree), OID_AUTO,
+	    name, CTLFLAG_RD | CTLTYPE_U16, sc,
+	    0,
+	    bgmac_mib, "I", "number of packets received by port");
+
+	snprintf(name, IFNAMSIZ, "cpu_tx");
+
+	SYSCTL_ADD_PROC(ctx, SYSCTL_CHILDREN(tree), OID_AUTO,
+	    name, CTLFLAG_RD | CTLTYPE_U16, sc,
+	    1,
+	    bgmac_mib, "I", "number of packets sent by port");
 
 	return 	0;
 }
@@ -741,6 +765,34 @@ bgmac_rxeof(struct device *dev, struct mbuf *m, struct bcm_rx_header *rxhdr)
 	BGMAC_UNLOCK(sc);
 	(*ifp->if_input)(ifp, m);
 	BGMAC_LOCK(sc);
+}
+
+static int
+bgmac_mib(SYSCTL_HANDLER_ARGS)
+{
+	struct bgmac_softc	*sc;
+	uint32_t		 value;
+	int			 metric;
+
+	sc = (struct bgmac_softc *) arg1;
+	metric = (arg2 & 0xF);
+
+	switch (metric) {
+	case 0:
+		value = (
+			bus_read_4(sc->mem, BGMAC_MIB_RX_PCKTS) +
+			bus_read_4(sc->mem, BGMAC_MIB_RX_BROADCAST_PCKTS) +
+			bus_read_4(sc->mem, BGMAC_MIB_RX_MULTICAST_PCKTS)
+			);
+		break;
+	case 1:
+		value = bus_read_4(sc->mem, BGMAC_MIB_TX_PCKTS);
+		break;
+	default:
+		value = 0;
+	}
+
+	return (sysctl_handle_16(oidp, NULL, value, req));
 }
 
 /**

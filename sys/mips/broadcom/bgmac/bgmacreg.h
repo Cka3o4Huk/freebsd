@@ -149,6 +149,9 @@ enum bgmac_intr_status
 #define BGMAC_MIB_RX_GOOD_PCKTS				0x3b8
 #define	BGMAC_MIB_RX_BYTES				0x3bc
 #define	BGMAC_MIB_RX_PCKTS				0x3c4
+#define	BGMAC_MIB_RX_BROADCAST_PCKTS			0x3c8
+#define	BGMAC_MIB_RX_MULTICAST_PCKTS			0x3cc
+
 #define	BGMAC_MIB_RX_ERR_JABBER_PCKTS			0x3f8	/* Error */
 #define	BGMAC_MIB_RX_ERR_OVERSIZE_PCKTS			0x3fc	/* Error */
 #define	BGMAC_MIB_RX_ERR_MISSED_PCKTS			0x404	/* Error */
