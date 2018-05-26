@@ -30,6 +30,8 @@
 #include <sys/cdefs.h>
 __FBSDID("$FreeBSD$");
 
+#include "opt_platform.h"
+
 /*
  * Ported version of bcm5325_switch from ZRouter.org
  */
@@ -50,6 +52,12 @@ __FBSDID("$FreeBSD$");
 
 #include "miibus_if.h"
 #include "mdio_if.h"
+
+#ifdef FDT
+#include <dev/ofw/openfirm.h>
+#include <dev/ofw/ofw_bus.h>
+#include <dev/ofw/ofw_bus_subr.h>
+#endif
 
 /* Required for etherswitch */
 #include <net/if.h>
@@ -79,6 +87,13 @@ __FBSDID("$FreeBSD$");
 #include "etherswitch_if.h"
 
 MALLOC_DEFINE(M_BCMSWITCH, "robosw", "robosw data structures");
+
+#ifdef FDT
+static const struct ofw_compat_data robosw_compat_data[] = {
+	{ "brcm,bcm53125",		0x53125 },
+	{ NULL,				0 }
+};
+#endif /* FDT */
 
 /*
  * ********************* PROTOTYPES **********************************
@@ -113,23 +128,16 @@ static int	robosw_mib(SYSCTL_HANDLER_ARGS);
 static int
 robosw_probe(device_t dev)
 {
-	/*
-	 * TODO:
-	 *  - init mtx
-	 *  - fetch switch ID
-	 *  - set description
-	 */
 
 #ifdef FDT
-	phandle_t robosw_node;
-	pcell_t cell;
+	if (!ofw_bus_status_okay(dev))
+		return (ENXIO);
 
-	robosw_node = fdt_find_compatible(OF_finddevice("/"),
-	    "brcm,bcm53125", 0);
-
-	if (robosw_node == 0)
+	if (ofw_bus_search_compatible(dev, robosw_compat_data)->ocd_data == 0)
 		return (ENXIO);
 #endif
+
+	device_set_desc_copy(dev, "Broadcom RoboSwitch");
 
 	return (BUS_PROBE_DEFAULT);
 }
@@ -852,3 +860,6 @@ DRIVER_MODULE(etherswitch, robosw, etherswitch_driver, etherswitch_devclass, 0, 
 DRIVER_MODULE(miibus,      robosw, miibus_driver, miibus_devclass, 0, 0);
 
 MODULE_DEPEND(robosw, mdio, 1, 1, 1);
+MODULE_DEPEND(robosw, etherswitch, 1, 1, 1);
+MODULE_DEPEND(robosw, miibus, 1, 1, 1);
+MODULE_VERSION(robosw, 1);
