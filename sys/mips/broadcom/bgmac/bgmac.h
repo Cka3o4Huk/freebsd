@@ -27,11 +27,10 @@
  * THE POSSIBILITY OF SUCH DAMAGES.
  */
 
-#ifndef _BGMAC_H_
-#define _BGMAC_H_
+#ifndef _MIPS_BROADCOM_BGMAC_BGMAC_H_
+#define _MIPS_BROADCOM_BGMAC_BGMAC_H_
 
 #include <sys/bus.h>
-
 #include <machine/bus.h>
 
 #include <dev/bhnd/bhnd_debug.h>
@@ -41,6 +40,9 @@
 
 #define BGMACDUMPREG(sc, _reg)						\
 	BHND_INFO_DEV(sc->dev, #_reg "\t=%08x", bus_read_4(sc->mem, _reg))
+
+#define BGMACDUMPREGB(sc, _reg, _bits)					\
+	BHND_INFO_DEV(sc->dev, #_reg "\t=%b", bus_read_4(sc->mem, _reg), _bits)
 
 #define BGMACDUMPREGF(sc, _reg, _func)					\
 	do {								\
@@ -100,17 +102,16 @@ bgmac_decode_ctl(uint32_t val)
 	BGMACDUMPREG(sc,BGMAC_REG_DMA_RX_RINGHIGH);			\
 	BGMACDUMPREG(sc,BGMAC_REG_DMA_RX_STATE);			\
 	BGMACDUMPREG(sc,BGMAC_REG_DMA_RX_ERROR);			\
-	BGMACDUMPREG(sc,BGMAC_REG_CMD_CFG);				\
+	BGMACDUMPREGB(sc,BGMAC_REG_CMD_CFG,BGMAC_REG_CMD_CFG_BITS);	\
 	BGMACDUMPREG(sc,BGMAC_REG_RX_MAX_LEN);				\
 	BGMACDUMPREG(sc,BGMAC_REG_DEVICE_CONTROL);			\
 	BGMACDUMPREG(sc,BGMAC_REG_DEVICE_STATUS);			\
 	BGMACDUMPREG(sc,BGMAC_REG_BIST_STATUS);				\
-	BGMACDUMPREG(sc,BGMAC_REG_INTR_STATUS);				\
+	BGMACDUMPREGB(sc,BGMAC_REG_INTR_STATUS,BGMAC_REG_INTR_STATUS_BITS);	\
 	BGMACDUMPREG(sc,BGMAC_REG_INTERRUPT_MASK);			\
 	BGMACDUMPREG(sc,BGMAC_REG_GP_TIMER);				\
 	BGMACDUMPREG(sc,BGMAC_REG_INTR_RECV_LAZY);			\
 	BGMACDUMPREG(sc,BGMAC_PWR_CTL);					\
-	BGMACDUMPREG(sc,BGMAC_CLOCK_CONTROL_ST);			\
 	BGMACDUMPREG(sc,BGMAC_FLOW_CTL_THRESH);				\
 	BGMACDUMPREG(sc,BGMAC_PAUSE_CTL);				\
 	BGMACDUMPREG(sc,BGMAC_REG_TXQ_CTL);				\
@@ -144,6 +145,5 @@ bgmac_decode_ctl(uint32_t val)
 	BGMACDUMPREG(sc,BGMAC_MIB_RX_ERR_SYMBOL);
 
 void	bgmac_if_start(struct ifnet *ifp);
-void	bgmac_reset(struct bgmac_softc *sc);
 void	bgmac_print_debug(struct bgmac_softc* sc);
-#endif /* _BGMAC_H_ */
+#endif /* _MIPS_BROADCOM_BGMAC_BGMAC_H_ */

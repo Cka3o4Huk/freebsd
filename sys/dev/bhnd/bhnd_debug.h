@@ -71,6 +71,7 @@
 #define _BHND_BHND_DEBUG_H_
 
 #include <sys/systm.h>
+#include <sys/ktr.h>
 
 #define	BHND_ERROR_LEVEL	0x00
 #define	BHND_ERROR_MSG		"ERROR"
