@@ -26,14 +26,32 @@
  * $FreeBSD$
  */
 
+#include "opt_platform.h"
+
 #include <sys/param.h>
 #include <sys/bus.h>
 #include <sys/systm.h>
+#include <sys/kernel.h>
 #include <sys/module.h>
 
 #include <dev/mdio/mdio.h>
 
 #include "mdio_if.h"
+
+#ifdef FDT
+#include <dev/ofw/openfirm.h>
+#include <dev/ofw/ofw_bus.h>
+#include <dev/ofw/ofw_bus_subr.h>
+
+#include <dev/fdt/simplebus.h>
+
+/* OFW bus interface */
+struct mdio_ofw_devinfo {
+	struct ofw_bus_devinfo	di_dinfo;
+	struct resource_list	di_rl;
+};
+
+#endif /* FDT */
 
 static void
 mdio_identify(driver_t *driver, device_t parent)
@@ -52,10 +70,91 @@ mdio_probe(device_t dev)
 	return (BUS_PROBE_SPECIFIC);
 }
 
+#ifdef FDT
+static void				mdio_add_device(device_t dev,
+					    phandle_t node, phandle_t child);
+static struct mdio_ofw_devinfo *	mdio_setup_dinfo(device_t dev,
+					    phandle_t node, phandle_t child);
+static const struct ofw_bus_devinfo *	mdio_ofw_get_devinfo(device_t bus,
+					    device_t child);
+
+static void
+mdio_add_device(device_t dev, phandle_t node, phandle_t child)
+{
+	struct mdio_ofw_devinfo	*ndi;
+	device_t		 cdev;
+
+	ndi = mdio_setup_dinfo(dev, node, child);
+	if (ndi == NULL)
+		return;
+
+	cdev = device_add_child_ordered(dev, 0, NULL, -1);
+	if (cdev == NULL) {
+		device_printf(dev, "<%s>: device_add_child failed\n",
+		    ndi->di_dinfo.obd_name);
+		resource_list_free(&ndi->di_rl);
+		ofw_bus_gen_destroy_devinfo(&ndi->di_dinfo);
+		free(ndi, M_DEVBUF);
+		return;
+	}
+
+	device_set_ivars(cdev, ndi);
+}
+
+static struct mdio_ofw_devinfo *
+mdio_setup_dinfo(device_t dev, phandle_t node, phandle_t child)
+{
+	struct mdio_ofw_devinfo	*ndi;
+	pcell_t			 acells, scells;
+
+	acells = 2;
+	scells = 1;
+
+	ndi = malloc(sizeof(*ndi), M_DEVBUF, M_WAITOK | M_ZERO);
+
+	if (ofw_bus_gen_setup_devinfo(&ndi->di_dinfo, child) != 0) {
+		free(ndi, M_DEVBUF);
+		return (NULL);
+	}
+
+	resource_list_init(&ndi->di_rl);
+
+	OF_getencprop(node, "#address-cells", &acells, sizeof(acells));
+	OF_getencprop(node, "#size-cells", &scells, sizeof(scells));
+
+	ofw_bus_reg_to_rl(dev, child, acells, scells, &ndi->di_rl);
+	ofw_bus_intr_to_rl(dev, child, &ndi->di_rl, NULL);
+
+	return (ndi);
+}
+
+static const struct ofw_bus_devinfo *
+mdio_ofw_get_devinfo(device_t bus __unused, device_t child)
+{
+	struct mdio_ofw_devinfo *di;
+
+	di = device_get_ivars(child);
+	return (&di->di_dinfo);
+}
+
+#endif /* FDT */
+
 static int
 mdio_attach(device_t dev)
 {
+#ifdef FDT
+	phandle_t 	 node;
+	phandle_t	 child;
+	const char	*name;
 
+	node = ofw_bus_get_node(dev);
+	name = ofw_bus_get_name(dev);
+
+	device_printf(dev, "looking for ofw children for %s / %x\n", name, node);
+	/* Attach child devices */
+	for (child = OF_child(node); child > 0; child = OF_peer(child))
+		mdio_add_device(dev, node, child);
+#endif
 	bus_generic_probe(dev);
 	bus_enumerate_hinted_children(dev);
 	return (bus_generic_attach(dev));
@@ -123,6 +222,15 @@ static device_method_t mdio_methods[] = {
 	DEVMETHOD(mdio_readextreg,	mdio_readextreg),
 	DEVMETHOD(mdio_writeextreg,	mdio_writeextreg),
 
+#ifdef FDT
+	DEVMETHOD(ofw_bus_get_devinfo,	mdio_ofw_get_devinfo),
+	DEVMETHOD(ofw_bus_get_compat,	ofw_bus_gen_get_compat),
+	DEVMETHOD(ofw_bus_get_model,	ofw_bus_gen_get_model),
+	DEVMETHOD(ofw_bus_get_name,	ofw_bus_gen_get_name),
+	DEVMETHOD(ofw_bus_get_node,	ofw_bus_gen_get_node),
+	DEVMETHOD(ofw_bus_get_type,	ofw_bus_gen_get_type),
+#endif
+
 	DEVMETHOD_END
 };
 
@@ -132,6 +240,28 @@ driver_t mdio_driver = {
 	0
 };
 
+static int
+mdio_modevent(module_t mod, int type, void *data)
+{
+
+	switch (type) {
+	case MOD_LOAD:
+		break;
+	case MOD_UNLOAD:
+		break;
+	default:
+		return (EOPNOTSUPP);
+	}
+	return (0);
+}
+
+static moduledata_t mdio_mod = {
+	"mdio",
+	mdio_modevent,
+	0
+};
+
 devclass_t mdio_devclass;
 
+DECLARE_MODULE(mdio, mdio_mod, SI_SUB_DRIVERS, SI_ORDER_ANY);
 MODULE_VERSION(mdio, 1);
