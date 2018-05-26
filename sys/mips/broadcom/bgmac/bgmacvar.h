@@ -27,7 +27,8 @@
  * THE POSSIBILITY OF SUCH DAMAGES.
  */
 
-#pragma once
+#ifndef _MIPS_BROADCOM_BGMAC_BGMACVAR_H_
+#define _MIPS_BROADCOM_BGMAC_BGMACVAR_H_
 
 #include <sys/param.h>
 #include <sys/malloc.h>
@@ -70,6 +71,7 @@ typedef enum{
 	PHY_WRITE
 }  phymode ;
 
+/* Concurrency macros */
 #define	BGMAC_LOCK_INIT(sc) \
 	mtx_init(&(sc)->sc_mtx, device_get_nameunit((sc)->dev), \
 	    MTX_NETWORK_LOCK, MTX_DEF)
@@ -77,3 +79,5 @@ typedef enum{
 #define	BGMAC_LOCK(sc)			mtx_lock(&(sc)->sc_mtx)
 #define	BGMAC_UNLOCK(sc)		mtx_unlock(&(sc)->sc_mtx)
 #define	BGMAC_ASSERT_LOCKED(sc)		mtx_assert(&(sc)->sc_mtx, MA_OWNED)
+
+#endif /* _MIPS_BROADCOM_BGMAC_BGMACVAR_H_ */
