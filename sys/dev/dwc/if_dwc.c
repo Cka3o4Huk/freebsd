@@ -65,6 +65,7 @@ __FBSDID("$FreeBSD$");
 
 #include <dev/dwc/if_dwc.h>
 #include <dev/dwc/if_dwcvar.h>
+#include <dev/fdt/simplebus.h>
 #include <dev/mii/mii.h>
 #include <dev/mii/miivar.h>
 #include <dev/ofw/ofw_bus.h>
@@ -846,7 +847,7 @@ dwc_intr(void *arg)
 }
 
 static int
-setup_dma(struct dwc_softc *sc)
+dwc_dma_setup(struct dwc_softc *sc)
 {
 	struct mbuf *m;
 	int error;
@@ -985,7 +986,8 @@ setup_dma(struct dwc_softc *sc)
 		    &sc->rxbuf_map[idx].map);
 		if (error != 0) {
 			device_printf(sc->dev,
-			    "could not create RX buffer DMA map.\n");
+			    "could not create RX buffer DMA map: err=%d"
+			    ", idx=%d\n", error, idx);
 			goto out;
 		}
 		if ((m = dwc_alloc_mbufcl(sc)) == NULL) {
@@ -1004,6 +1006,53 @@ out:
 	if (error != 0)
 		return (ENXIO);
 
+	return (0);
+}
+
+static int
+dwc_dma_release(struct dwc_softc *sc)
+{
+	int	idx;
+
+	if (sc->txdesc_tag != NULL) {
+		if (sc->txdesc_map != NULL)
+			bus_dmamap_unload(sc->txdesc_tag, sc->txdesc_map);
+		if (sc->txdesc_ring != NULL)
+			bus_dmamem_free(sc->txdesc_tag, sc->txdesc_ring,
+			    sc->txdesc_map);
+		bus_dma_tag_destroy(sc->txdesc_tag);
+	}
+
+	if (sc->rxdesc_tag != NULL) {
+		if (sc->rxdesc_map != NULL)
+			bus_dmamap_unload(sc->rxdesc_tag, sc->rxdesc_map);
+		if (sc->rxdesc_ring != NULL)
+			bus_dmamem_free(sc->rxdesc_tag, sc->rxdesc_ring,
+			    sc->rxdesc_map);
+		bus_dma_tag_destroy(sc->rxdesc_tag);
+	}
+
+	/* RX buffers */
+	if (sc->rxbuf_tag != NULL) {
+		for (idx = 0; idx < RX_DESC_COUNT; idx++) {
+			if (sc->rxbuf_map[idx].map == NULL)
+				continue;
+			bus_dmamap_destroy(sc->rxbuf_tag,
+			    sc->rxbuf_map[idx].map);
+		}
+		bus_dma_tag_destroy(sc->rxbuf_tag);
+	}
+
+	/* TX buffers */
+	if (sc->txbuf_tag != NULL) {
+		for (idx = 0; idx < RX_DESC_COUNT; idx++) {
+			if (sc->txbuf_map[idx].map == NULL)
+				continue;
+			bus_dmamap_destroy(sc->txbuf_tag,
+			    sc->txbuf_map[idx].map);
+		}
+		bus_dma_tag_destroy(sc->txbuf_tag);
+	}
 	return (0);
 }
 
@@ -1039,6 +1088,23 @@ dwc_get_hwaddr(struct dwc_softc *sc, uint8_t *hwaddr)
 		hwaddr[4] = rnd >>  8;
 		hwaddr[5] = rnd >>  0;
 	}
+
+	return (0);
+}
+
+static int
+dwc_set_hwaddr(struct dwc_softc *sc, uint8_t *hwaddr)
+{
+	uint32_t hi, lo;
+
+	lo = hwaddr[3];
+	lo = (lo << 8) & hwaddr[2];
+	lo = (lo << 8) & hwaddr[1];
+	lo = (lo << 8) & hwaddr[0];
+	WRITE4(sc, MAC_ADDRESS_LOW(0), lo);
+	hi = hwaddr[5];
+	hi = (hi << 8) & hwaddr[4];
+	WRITE4(sc, MAC_ADDRESS_HIGH(0), hi);
 
 	return (0);
 }
@@ -1146,11 +1212,12 @@ dwc_probe(device_t dev)
 static int
 dwc_attach(device_t dev)
 {
-	uint8_t macaddr[ETHER_ADDR_LEN];
-	struct dwc_softc *sc;
-	struct ifnet *ifp;
-	int error, i;
-	uint32_t reg;
+	struct dwc_softc 	*sc;
+	struct ifnet 		*ifp;
+	phandle_t		 ofw_node;
+	uint32_t 		 reg;
+	uint8_t 		 macaddr[ETHER_ADDR_LEN];
+	int 			 error, i;
 
 	sc = device_get_softc(dev);
 	sc->dev = dev;
@@ -1188,6 +1255,11 @@ dwc_attach(device_t dev)
 		return (ENXIO);
 	}
 
+	if (dwc_set_hwaddr(sc, macaddr)) {
+		device_printf(sc->dev, "can't set mac\n");
+		return (ENXIO);
+	}
+
 	/* Reset */
 	reg = READ4(sc, BUS_MODE);
 	reg |= (BUS_MODE_SWR);
@@ -1218,7 +1290,7 @@ dwc_attach(device_t dev)
 	reg &= ~(MODE_ST | MODE_SR);
 	WRITE4(sc, OPERATION_MODE, reg);
 
-	if (setup_dma(sc))
+	if (dwc_dma_setup(sc))
 	        return (ENXIO);
 
 	/* Setup addresses */
@@ -1253,27 +1325,76 @@ dwc_attach(device_t dev)
 	ifp->if_snd.ifq_drv_maxlen = TX_DESC_COUNT - 1;
 	IFQ_SET_READY(&ifp->if_snd);
 
+	do {
+		char *name;
+		int ret;
+		phandle_t child;
 
-#if 0
-	/* Attach the mii driver. */
-	error = mii_attach(dev, &sc->miibus, ifp, dwc_media_change,
-	    dwc_media_status, BMSR_DEFCAPMASK, MII_PHY_ANY,
-	    MII_OFFSET_ANY, 0);
+		for (child = OF_child(ofw_bus_get_node(dev)); child != 0; child = OF_peer(child)) {
+			ret = OF_getprop_alloc(child, "name", sizeof(*name), (void **)&name);
+			if (ret != -1) {
+				device_printf(dev, "child name: %s , id: %x\n", name, child);
+				free(name, M_OFWPROP);
+			}
+		}
+	} while ( 1 == 0 );
 
-	if (error != 0) {
-		device_printf(dev, "PHY attach failed\n");
-		return (ENXIO);
+	ofw_node = ofw_bus_find_child(ofw_bus_get_node(dev), "mdio");
+
+	if (ofw_node != 0) {
+		/* Attach etherswitch */
+
+		sc->miiproxy = simplebus_add_device(dev, ofw_node, 0, "mdio",
+		    -1, NULL);
+		device_printf(dev, "dwc: found mdio as simplebus_device: %s, %s, %x\n",
+		    ofw_bus_get_name(sc->miiproxy),
+		    device_get_nameunit(sc->miiproxy),
+		    ofw_node);
+	} else {
+		/* Attach the mii driver. */
+		error = mii_attach(dev, &sc->miibus, ifp, dwc_media_change,
+		    dwc_media_status, BMSR_DEFCAPMASK, MII_PHY_ANY,
+		    MII_OFFSET_ANY, 0);
+
+		if (error != 0) {
+			device_printf(dev, "PHY attach failed\n");
+			return (ENXIO);
+		}
+		sc->mii_softc = device_get_softc(sc->miibus);
 	}
-	sc->mii_softc = device_get_softc(sc->miibus);
-#endif
 
-	sc->miiproxy = device_add_child(dev, "mdio", -1);
 	bus_generic_attach(dev);
 
 	/* All ready to run, attach the ethernet interface. */
 	ether_ifattach(ifp, macaddr);
 	sc->is_attached = true;
 
+	return (0);
+}
+
+static int
+dwc_detach(device_t dev)
+{
+	struct dwc_softc	*sc;
+
+	sc = device_get_softc(dev);
+
+	DWC_LOCK(sc);
+	dwc_stop_locked(sc);
+	DWC_UNLOCK(sc);
+
+	ether_ifdetach(sc->ifp);
+	bus_generic_detach(dev);
+	device_delete_children(dev);
+
+	if (sc->intr_cookie != NULL)
+		bus_teardown_intr(dev, sc->res[1], sc->intr_cookie);
+
+	bus_release_resources(dev, dwc_spec, sc->res);
+	if_free(sc->ifp);
+	dwc_dma_release(sc);
+
+	mtx_destroy(&(sc->mtx));
 	return (0);
 }
 
@@ -1384,18 +1505,37 @@ dwc_miibus_statchg(device_t dev)
 	WRITE4(sc, MAC_CONFIGURATION, reg);
 }
 
+static const struct ofw_bus_devinfo *
+dwc_ofw_get_devinfo(device_t bus __unused, device_t child)
+{
+	struct simplebus_devinfo *di;
+
+	di = device_get_ivars(child);
+	return (&di->obdinfo);
+}
+
 static device_method_t dwc_methods[] = {
 	DEVMETHOD(device_probe,		dwc_probe),
 	DEVMETHOD(device_attach,	dwc_attach),
+	DEVMETHOD(device_detach,	dwc_detach),
 
 	/* MII Interface */
 	DEVMETHOD(miibus_readreg,	dwc_miibus_read_reg),
 	DEVMETHOD(miibus_writereg,	dwc_miibus_write_reg),
 	DEVMETHOD(miibus_statchg,	dwc_miibus_statchg),
 
+	DEVMETHOD(ofw_bus_get_devinfo,	dwc_ofw_get_devinfo),
+	DEVMETHOD(ofw_bus_get_compat,	ofw_bus_gen_get_compat),
+	DEVMETHOD(ofw_bus_get_model,	ofw_bus_gen_get_model),
+	DEVMETHOD(ofw_bus_get_name,	ofw_bus_gen_get_name),
+	DEVMETHOD(ofw_bus_get_node,	ofw_bus_gen_get_node),
+	DEVMETHOD(ofw_bus_get_type,	ofw_bus_gen_get_type),
+
+#if 0
 	/** MDIO interface **/
 	DEVMETHOD(mdio_readreg,		dwc_miibus_read_reg),
 	DEVMETHOD(mdio_writereg,	dwc_miibus_write_reg),
+#endif
 
 	{ 0, 0 }
 };
@@ -1414,3 +1554,5 @@ DRIVER_MODULE(mdio, dwc, mdio_driver, mdio_devclass, 0, 0);
 
 MODULE_DEPEND(dwc, ether, 1, 1, 1);
 MODULE_DEPEND(dwc, miibus, 1, 1, 1);
+MODULE_DEPEND(dwc, mdio, 1, 1, 1);
+MODULE_VERSION(dwc, 1);
