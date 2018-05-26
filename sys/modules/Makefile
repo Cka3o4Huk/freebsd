@@ -107,12 +107,15 @@ SUBDIR=	\
 	dcons_crom \
 	${_dpms} \
 	dummynet \
+	${_dwc} \
+	${_dwc_aw} \
 	${_efirt} \
 	${_em} \
 	${_ena} \
 	${_epic} \
 	esp \
 	${_et} \
+	${_etherswitch} \
 	evdev \
 	${_exca} \
 	ext2fs \
@@ -736,6 +739,9 @@ _ctau=		ctau
 .endif
 
 .if ${MACHINE_CPUARCH} == "arm"
+_dwc_aw=	dwc_aw
+_dwc=		dwc
+_etherswitch=	etherswitch
 _cfi=		cfi
 _cpsw=		cpsw
 .endif
