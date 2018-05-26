@@ -35,7 +35,8 @@
  */
 
 #include <sys/cdefs.h>
-#include <sys/types.h>
+__FBSDID("$FreeBSD$");
+
 #include <sys/param.h>
 #include <sys/kernel.h>
 #include <sys/module.h>
@@ -45,7 +46,7 @@
 #include <sys/sockio.h>
 #include <sys/mutex.h>
 #include <sys/sysctl.h>
-
+#include <sys/ktr.h>
 #include <sys/kdb.h>
 
 #include <net/if.h>
@@ -73,12 +74,18 @@
 #include <dev/mii/mii.h>
 #include <dev/mii/miivar.h>
 #include "miidevs.h"
-#include <dev/mii/brgphyreg.h>
 
 #include <machine/bus.h>
 #include <machine/resource.h>
 
+#if 1
 #define	BHND_LOGGING	BHND_TRACE_LEVEL
+#define KTR_BGMAC	KTR_DEV
+#else
+#define	BHND_LOGGING	BHND_INFO_LEVEL
+#define KTR_BGMAC	0
+#endif
+
 #include <dev/bhnd/bhnd.h>
 #include <dev/bhnd/bhnd_ids.h>
 
@@ -189,6 +196,26 @@ bgmac_attach(device_t dev)
 	sc->mem = res[0];
 	sc->irq = res[1];
 
+	error = bgmac_get_config(sc);
+	if (error) {
+		BHND_ERROR_DEV(dev, "can't get bgmac config from NVRAM: %d",
+		    error);
+		return (ENXIO);
+	}
+
+	bgmac_print_debug(sc);
+	bhnd_reset_hw(dev, 0, 0);
+
+	/* Hook interrupt */
+	error = bus_setup_intr(dev, sc->irq, INTR_TYPE_NET | INTR_MPSAFE,
+			NULL, bgmac_intr, sc, &sc->intrhand);
+	if (error) {
+		BHND_ERROR_DEV(dev, "can't setup interrupt");
+		bgmac_detach(dev);
+		return (error);
+	}
+
+
 #if defined(notyet)
 	/* Get power */
 	error = bhnd_alloc_pmu(dev);
@@ -203,34 +230,12 @@ bgmac_attach(device_t dev)
 		return (error);
 	}
 #endif
-	error = bgmac_get_config(sc);
-	if (error) {
-		BHND_ERROR_DEV(dev, "can't get bgmac config from NVRAM: %d",
-		    error);
-		return (ENXIO);
-	}
 
-	bgmac_print_debug(sc);
-
-	/*
-	 * Hook interrupt
-	 */
-	error = bus_setup_intr(dev, sc->irq, INTR_TYPE_NET | INTR_MPSAFE,
-			NULL, bgmac_intr, sc, &sc->intrhand);
-	if (error) {
-		BHND_ERROR_DEV(dev, "can't setup interrupt");
-		/*
-		 * TODO: cleanup / detach
-		 */
-		return (error);
-	}
 
 	error = bgmac_chip_force_init(sc);
 	if (error) {
 		BHND_ERROR_DEV(dev, "can't init GMAC chip %x", error);
-		/*
-		 * TODO: cleanup / detach
-		 */
+		bgmac_detach(dev);
 		return (error);
 	}
 
@@ -258,6 +263,9 @@ bgmac_attach(device_t dev)
 	    1,
 	    bgmac_mib, "I", "number of packets sent by port");
 
+	CTR1(KTR_BGMAC, "%s: ----- AFTER -----\n", device_get_nameunit(dev));
+	bgmac_print_debug(sc);
+
 	return 	0;
 }
 
@@ -265,6 +273,7 @@ static int
 bgmac_detach(device_t dev)
 {
 	struct bgmac_softc	*sc;
+	int 			 ret;
 
 	sc = device_get_softc(dev);
 
@@ -280,6 +289,11 @@ bgmac_detach(device_t dev)
 	if (sc->irq != NULL)
 		bus_release_resource(dev, bgmac_rspec[1].type, bgmac_rspec[1].rid, sc->irq);
 
+	ret = bhnd_release_pmu(dev);
+	if (ret != 0)
+		CTR2(KTR_BGMAC, "%s: error on release PMU 0x%x",
+		    device_get_nameunit(dev), ret);
+
 	/* stop chip */
 #if defined(notyet)
 	bgmac_chip_stop();
@@ -287,24 +301,58 @@ bgmac_detach(device_t dev)
 	bgmac_chip_deinit();
 	/* free resources */
 #endif
+
+	if (sc->dma != NULL) {
+		bcm_dma_detach(sc->dma);
+		free(sc->dma, M_BHND_BGMAC);
+	}
 	return 0;
 }	
 
-/*
- * Chip operations
- */
+/***** Chip operations *****/
 
+/*
+ * This function resets chip and makes preparations like clocks, DMA, access to
+ * external switch if present
+ */
 static int
 bgmac_chip_force_init(struct bgmac_softc *sc)
 {
 	int			 error;
 	uint32_t		 tmp;
+	device_t		 dev;
+
+	dev = sc->dev;
 
 	tmp = bus_read_4(sc->mem, BGMAC_REG_CMD_CFG);
 	bus_write_4(sc->mem, BGMAC_REG_CMD_CFG, tmp | BGMAC_REG_CMD_CFG_RESET);
 	/* hope it's enough for reset */
-	DELAY(100);
+	DELAY(5);
 
+	tmp = bus_read_4(sc->mem, BGMAC_REG_CMD_CFG);
+
+	/* disable tx, rx, loopback and enable full duplex, support of pauses */
+	tmp &= ~(	BGMAC_REG_CMD_CFG_TX | BGMAC_REG_CMD_CFG_RX |
+			BGMAC_REG_CMD_CFG_PAUSEIGNORE | BGMAC_REG_CMD_CFG_TAI |
+			BGMAC_REG_CMD_CFG_HALFDUPLEX | BGMAC_REG_CMD_CFG_LOOPBACK |
+			BGMAC_REG_CMD_CFG_RL | BGMAC_REG_CMD_CFG_PAD_ENA |
+			BGMAC_REG_CMD_CFG_RED | BGMAC_REG_CMD_CFG_PE |
+			BGMAC_REG_CMD_CFG_PF);
+	/* enable promiscuous support */
+	tmp |= (	BGMAC_REG_CMD_CFG_PROM | BGMAC_REG_CMD_CFG_NLC |
+			BGMAC_REG_CMD_CFG_CFE | BGMAC_REG_CMD_CFG_TPI |
+			BGMAC_REG_CMD_CFG_AT);
+	bus_write_4(sc->mem, BGMAC_REG_CMD_CFG, tmp);
+
+	tmp = bus_read_4(sc->mem, BGMAC_REG_CMD_CFG);
+	bus_write_4(sc->mem, BGMAC_REG_CMD_CFG, tmp & ~BGMAC_REG_CMD_CFG_RESET);
+	DELAY(5);
+
+	/* enable external access to switch */
+	tmp = bus_read_4(sc->mem, BGMAC_REG_PHY_CONTROL);
+	bus_write_4(sc->mem, BGMAC_REG_PHY_CONTROL, tmp | BGMAC_REG_PHY_CONTROL_MTE);
+
+	/* set MAC address */
 	bgmac_chip_set_macaddr(sc);
 
 	if (sc->dma != NULL) {
@@ -315,9 +363,6 @@ bgmac_chip_force_init(struct bgmac_softc *sc)
 	sc->dma = malloc(sizeof(struct bcm_dma), M_BHND_BGMAC, M_WAITOK);
 	if (sc->dma == NULL) {
 		BHND_ERROR_DEV(sc->dev, "can't allocate memory for bcm_dma");
-		/*
-		 * TODO: cleanup
-		 */
 		return (ENOMEM);
 	}
 
@@ -325,7 +370,25 @@ bgmac_chip_force_init(struct bgmac_softc *sc)
 	uint32_t intr_status = bus_read_4(sc->mem, BGMAC_REG_INTR_STATUS);
 	bus_write_4(sc->mem, BGMAC_REG_INTR_STATUS, intr_status);
 
-	BHND_TRACE_DEV(sc->dev, "clear bgmac_intr_status: 0x%x", intr_status);
+	CTR2(KTR_BGMAC, "%s: clear bgmac_intr_status: 0x%x",
+	    device_get_nameunit(dev), intr_status);
+
+	/* set number of interrupts per frame */
+	bus_write_4(sc->mem, BGMAC_REG_INTR_RECV_LAZY,
+	    1 << BGMAC_REG_INTR_RECV_LAZY_FC_SHIFT);
+
+	/* enable high throughput clocking */
+	error = bhnd_alloc_pmu(dev);
+	CTR2(KTR_BGMAC, "%s: allocate power unit: err = 0x%x",
+		device_get_nameunit(dev), error);
+	if (error != 0)
+		return (error);
+
+	error = bhnd_request_clock(dev, BHND_CLOCK_HT);
+	CTR2(KTR_BGMAC, "%s: request clock gating HT: err = 0x%x",
+		    device_get_nameunit(dev), error);
+	if (error != 0)
+		return (error);
 
 	/* Flow control - on/off and pause */
 	/*
@@ -337,14 +400,8 @@ bgmac_chip_force_init(struct bgmac_softc *sc)
 	if (error) {
 		BHND_ERROR_DEV(sc->dev, "error occurred during bcm_dma_attach: %d",
 		    error);
-		/*
-		 * TODO: cleanup
-		 */
 		return (error);
 	}
-
-	tmp = bus_read_4(sc->mem, BGMAC_REG_CMD_CFG);
-	bus_write_4(sc->mem, BGMAC_REG_CMD_CFG, tmp & ~BGMAC_REG_CMD_CFG_RESET);
 
 	return (0);
 }
@@ -368,16 +425,11 @@ bgmac_chip_set_intr_mask(struct bgmac_softc *sc, enum bgmac_intr_status st)
 	if (st & I_TX)
 		mask |= BGMAC_REG_INTR_STATUS_TX;
 
+	mask |= BGMAC_REG_INTR_STATUS_MDIO;
+
 	bus_write_4(sc->mem, BGMAC_REG_INTERRUPT_MASK, mask);
 	feed = bus_read_4(sc->mem, BGMAC_REG_INTERRUPT_MASK);
-	BHND_TRACE_DEV(sc->dev, "bgmac_intr: 0x%x", feed);
-}
-
-void
-bgmac_reset(struct bgmac_softc *sc)
-{
-
-	bgmac_chip_set_cmdcfg(sc, 0);
+	CTR2(KTR_BGMAC, "%s: bgmac_intr = 0x%x", device_get_nameunit(sc->dev), feed);
 }
 
 static void
@@ -387,19 +439,41 @@ bgmac_chip_set_cmdcfg(struct bgmac_softc *sc, uint32_t val)
 
 	tmp = bus_read_4(sc->mem, BGMAC_REG_CMD_CFG);
 	bus_write_4(sc->mem, BGMAC_REG_CMD_CFG, tmp | BGMAC_REG_CMD_CFG_RESET);
-	/* hope it's enough for reset */
-	DELAY(100);
+	DELAY(2);
+	bus_barrier(sc->mem, BGMAC_REG_CMD_CFG, 0, BUS_SPACE_BARRIER_WRITE | BUS_SPACE_BARRIER_READ);
 
 	tmp = bus_read_4(sc->mem, BGMAC_REG_CMD_CFG);
 	bus_write_4(sc->mem, BGMAC_REG_CMD_CFG, tmp | val);
-
 	DELAY(100);
+	bus_barrier(sc->mem, BGMAC_REG_CMD_CFG, 0, BUS_SPACE_BARRIER_WRITE | BUS_SPACE_BARRIER_READ);
 
 	tmp = bus_read_4(sc->mem, BGMAC_REG_CMD_CFG);
 	bus_write_4(sc->mem, BGMAC_REG_CMD_CFG, tmp & ~BGMAC_REG_CMD_CFG_RESET);
-
-	DELAY(100);
+	DELAY(2);
+	bus_barrier(sc->mem, BGMAC_REG_CMD_CFG, 0, BUS_SPACE_BARRIER_WRITE | BUS_SPACE_BARRIER_READ);
 }
+
+static void
+bgmac_chip_unset_cmdcfg(struct bgmac_softc *sc, uint32_t val)
+{
+	uint32_t	tmp;
+
+	tmp = bus_read_4(sc->mem, BGMAC_REG_CMD_CFG);
+	bus_write_4(sc->mem, BGMAC_REG_CMD_CFG, tmp | BGMAC_REG_CMD_CFG_RESET);
+	DELAY(2);
+	bus_barrier(sc->mem, BGMAC_REG_CMD_CFG, 0, BUS_SPACE_BARRIER_WRITE | BUS_SPACE_BARRIER_READ);
+
+	tmp = bus_read_4(sc->mem, BGMAC_REG_CMD_CFG);
+	bus_write_4(sc->mem, BGMAC_REG_CMD_CFG, tmp & ~val);
+	DELAY(100);
+	bus_barrier(sc->mem, BGMAC_REG_CMD_CFG, 0, BUS_SPACE_BARRIER_WRITE | BUS_SPACE_BARRIER_READ);
+
+	tmp = bus_read_4(sc->mem, BGMAC_REG_CMD_CFG);
+	bus_write_4(sc->mem, BGMAC_REG_CMD_CFG, tmp & ~BGMAC_REG_CMD_CFG_RESET);
+	DELAY(2);
+	bus_barrier(sc->mem, BGMAC_REG_CMD_CFG, 0, BUS_SPACE_BARRIER_WRITE | BUS_SPACE_BARRIER_READ);
+}
+
 
 static void
 bgmac_chip_set_macaddr(struct bgmac_softc * sc)
@@ -417,7 +491,7 @@ bgmac_chip_start_txrx(struct bgmac_softc * sc)
 {
 
 	BGMAC_ASSERT_LOCKED(sc);
-	BHND_INFO_DEV(sc->dev, "starting TX / RX");
+	CTR1(KTR_BGMAC, "%s: start TX / RX", device_get_nameunit(sc->dev));
 	bgmac_chip_set_cmdcfg(sc, BGMAC_REG_CMD_CFG_RX | BGMAC_REG_CMD_CFG_TX);
 	bgmac_chip_set_intr_mask(sc, I_ERR | I_RX | I_TX);
 	return;
@@ -428,8 +502,8 @@ bgmac_chip_stop_txrx(struct bgmac_softc * sc)
 {
 
 	BGMAC_ASSERT_LOCKED(sc);
-	BHND_INFO_DEV(sc->dev, "stop TX / RX");
-	bgmac_chip_set_cmdcfg(sc, 0);
+	CTR1(KTR_BGMAC, "%s: stop TX / RX", device_get_nameunit(sc->dev));
+	bgmac_chip_unset_cmdcfg(sc, BGMAC_REG_CMD_CFG_RX | BGMAC_REG_CMD_CFG_TX);
 	bgmac_chip_set_intr_mask(sc, I_ERR);
 	return;
 }
@@ -553,6 +627,7 @@ bgmac_if_ioctl(if_t ifp, u_long command, caddr_t data)
 			}
 		} else if (ifp->if_drv_flags & IFF_DRV_RUNNING)
 			bgmac_chip_stop_txrx(sc);
+		bgmac_print_debug(sc);
 		BGMAC_UNLOCK(sc);
 		break;
 	case SIOCADDMULTI:
@@ -678,21 +753,27 @@ bgmac_intr(void *arg)
 	intr_status = bus_read_4(sc->mem, BGMAC_REG_INTR_STATUS);
 	bus_write_4(sc->mem, BGMAC_REG_INTR_STATUS, intr_status);
 
-	BHND_TRACE_DEV(sc->dev, "bgmac_intr_status: 0x%x", intr_status);
+	CTR2(KTR_BGMAC, "%s: bgmac_intr_status: 0x%x",
+	    device_get_nameunit(sc->dev), intr_status);
 
 	/* disable interrupt for a while */
 	bgmac_chip_set_intr_mask(sc, 0);
 
 	if (intr_status & BGMAC_REG_INTR_STATUS_TX) {
-		BHND_TRACE_DEV(sc->dev, "TX!");
+		CTR1(KTR_BGMAC, "TX!", device_get_nameunit(sc->dev));
 		bcm_dma_tx(sc->dma->wme[0]);
 		intr_status &= ~BGMAC_REG_INTR_STATUS_TX;
 	}
 
 	if (intr_status & BGMAC_REG_INTR_STATUS_RX) {
-		BHND_TRACE_DEV(sc->dev, "RX!");
+		CTR1(KTR_BGMAC, "RX!", device_get_nameunit(sc->dev));
 		bcm_dma_rx(sc->dma->rx);
 		intr_status &= ~BGMAC_REG_INTR_STATUS_RX;
+	}
+
+	if (intr_status & BGMAC_REG_INTR_STATUS_MDIO) {
+		CTR1(KTR_BGMAC, "MDIO!", device_get_nameunit(sc->dev));
+		intr_status &= ~BGMAC_REG_INTR_STATUS_MDIO;
 	}
 
 	if (intr_status & BGMAC_REG_INTR_STATUS_ERR_OVER) {

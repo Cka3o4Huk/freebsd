@@ -151,24 +151,4 @@ DB_FUNC(dump, db_show_bgmacdump, db_bgmac_table, CS_OWN, NULL)
 	return;
 }
 
-DB_FUNC(reset, db_show_bgmacreset, db_bgmac_table, CS_OWN, NULL)
-{
-	device_t		 dev;
-	int			 t;
-
-	dev = NULL;
-	t = db_read_token();
-	if (t == tIDENT) {
-		dev = device_lookup_by_name(db_tok_string);
-	}
-
-	db_skip_to_eol();
-
-	if (dev != NULL)
-		bgmac_reset(device_get_softc(dev));
-	else
-		db_printf("usage: show bgmac reset <bgmac_device>\n");
-
-	return;
-}
 #endif

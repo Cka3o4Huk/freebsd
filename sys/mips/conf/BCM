@@ -28,9 +28,9 @@ makeoptions	INLINE_LIMIT=768
 
 options 	DDB
 options 	KDB
-#options		KTR
-#options		KTR_ENTRIES=8192
-#options		KTR_MASK=(0)
+options		KTR
+options		KTR_ENTRIES=8192
+options		KTR_MASK=(KTR_DEV)
 
 #KERNCONF_OPTIONS+=		MAXUSERS=3
 #KERNCONF_OPTIONS+=		MAXFILES=512
