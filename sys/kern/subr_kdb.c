@@ -477,6 +477,8 @@ kdb_enter(const char *why, const char *msg)
 		kdb_why = why;
 		breakpoint();
 		kdb_why = KDB_WHY_UNSET;
+		if (msg != NULL)
+			printf("KDB: exit: %s\n", msg);
 	}
 }
 
