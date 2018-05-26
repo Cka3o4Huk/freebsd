@@ -40,7 +40,7 @@
  */
 #define ROBOSW_WRITEREG(r, v)						\
 	if (MDIO_WRITEREG(sc->sc_parent, ROBOSW_PSEUDOPHY_ADDR, r, v)) {\
-		device_printf(sc->sc_dev, "WRITEREG failed: %x/%x", r,  \
+		device_printf(sc->sc_dev, "WRITEREG failed: %x/%x\n", r,\
 		    v); 						\
 	}
 
@@ -52,7 +52,7 @@
 #define ROBOSWDUMPREG(_reg)						\
 	ROBOSWPRINT(dev) #_reg "=%08x\n", robosw_read4(sc, _reg))
 
-#define	ROBOSWPORTBITS	"\020\1p0\2p1\3p2\4p3\5p4\6p5\7p6"
+#define	ROBOSWPORTBITS	"\020\001p0\002p1\003p2\004p3\005p4\006p5\007p6"
 #define	ROBOSWDUMPVLAN(_dev, _start, _end, _prefix)			\
 	do {								\
 		struct etherswitch_vlangroup 	vg;			\
