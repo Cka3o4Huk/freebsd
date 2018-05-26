@@ -233,9 +233,12 @@ elf_reloc_internal(linker_file_t lf, Elf_Addr relocbase, const void *data,
 
 		case R_ARM_ABS32:
 			error = lookup(lf, symidx, 1, &addr);
-			if (error != 0)
-				return -1;
-			store_ptr(where, addr + load_ptr(where));
+			if (error == 0) {
+				store_ptr(where, addr + load_ptr(where));
+				return (0);
+			}
+			printf("kldload: can't lookup address of %x of %s", symidx, lf->filename);
+			return (-1);
 			break;
 
 		case R_ARM_COPY:	/* none */
@@ -244,7 +247,7 @@ elf_reloc_internal(linker_file_t lf, Elf_Addr relocbase, const void *data,
 			 * objects.
 			 */
 			printf("kldload: unexpected R_COPY relocation\n");
-			return -1;
+			return (-1);
 			break;
 
 		case R_ARM_JUMP_SLOT:
@@ -253,6 +256,7 @@ elf_reloc_internal(linker_file_t lf, Elf_Addr relocbase, const void *data,
 				store_ptr(where, addr);
 				return (0);
 			}
+			printf("kldload: can't lookup address of %x of %s", symidx, lf->filename);
 			return (-1);
 		case R_ARM_RELATIVE:
 			break;
@@ -260,7 +264,7 @@ elf_reloc_internal(linker_file_t lf, Elf_Addr relocbase, const void *data,
 		default:
 			printf("kldload: unexpected relocation type %d\n",
 			       rtype);
-			return -1;
+			return (-1);
 	}
 	return(0);
 }

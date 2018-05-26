@@ -220,10 +220,10 @@ device		e6000sw
 # NOTE: Be sure to keep the 'device miibus' line in order to use these NICs!
 device		miibus
 
-device		awg			# 10/100/1000 integrated EMAC controller
+#device		awg			# 10/100/1000 integrated EMAC controller
 device		cpsw			# TI Common Platform Ethernet Switch (CPSW)
 device		cgem			# Zynq-7000 gig ethernet device
-device		dwc			# 10/100/1000 integrated GMAC controller
+#device		dwc			# 10/100/1000 integrated GMAC controller
 device		emac			# 10/100 integrated EMAC controller
 device		ffec			# Freescale Fast Ethernet Controller
 device		neta			# Marvell 10/100/1000 Network controller
