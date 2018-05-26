@@ -115,6 +115,8 @@ SUBDIR=	\
 	${_drm} \
 	${_drm2} \
 	dummynet \
+	${_dwc} \
+	${_dwc_aw} \
 	${_ed} \
 	${_efirt} \
 	${_em} \
@@ -123,6 +125,7 @@ SUBDIR=	\
 	${_epic} \
 	esp \
 	${_et} \
+	${_etherswitch} \
 	evdev \
 	${_ex} \
 	${_exca} \
@@ -773,6 +776,9 @@ _ex=		ex
 .endif
 
 .if ${MACHINE_CPUARCH} == "arm"
+_dwc_aw=	dwc_aw
+_dwc=		dwc
+_etherswitch=	etherswitch
 _cfi=		cfi
 _cpsw=		cpsw
 .endif

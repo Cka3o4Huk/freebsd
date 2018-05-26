@@ -25,6 +25,8 @@
 # SUCH DAMAGE.
 #
 
-SUBDIR = robosw
+
+SUBDIR=	 etherswitch
+SUBDIR+= robosw
 
 .include <bsd.subdir.mk>
