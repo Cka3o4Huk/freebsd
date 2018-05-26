@@ -143,3 +143,4 @@ DEFINE_CLASS_1(dwc, a20_dwc_driver, a20_dwc_methods, sizeof(struct dwc_softc),
 DRIVER_MODULE(a20_dwc, simplebus, a20_dwc_driver, a20_dwc_devclass, 0, 0);
 
 MODULE_DEPEND(a20_dwc, dwc, 1, 1, 1);
+MODULE_VERSION(a20_dwc, 1);
