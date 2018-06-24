@@ -1331,7 +1331,7 @@ dwc_attach(device_t dev)
 		phandle_t child;
 
 		for (child = OF_child(ofw_bus_get_node(dev)); child != 0; child = OF_peer(child)) {
-			ret = OF_getprop_alloc(child, "name", sizeof(*name), (void **)&name);
+			ret = OF_getprop_alloc(child, "name", (void **)&name);
 			if (ret != -1) {
 				device_printf(dev, "child name: %s , id: %x\n", name, child);
 				free(name, M_OFWPROP);
