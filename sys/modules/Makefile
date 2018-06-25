@@ -744,6 +744,7 @@ _dwc=		dwc
 _etherswitch=	etherswitch
 _cfi=		cfi
 _cpsw=		cpsw
+_allwinner=	allwinner
 .endif
 
 .if ${MACHINE_CPUARCH} == "powerpc"
