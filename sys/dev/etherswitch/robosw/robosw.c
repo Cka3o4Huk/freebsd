@@ -437,7 +437,7 @@ robosw_op(struct robosw_softc *sc, uint32_t reg, uint32_t *res, int op)
 		return (EINVAL);
 
 	data = (op == ROBOSW_WRITEOP) ? *res : 0;
-	len  = (ROBOSW_UNSHIFT(reg, ROBOSW_LEN) + 1) / 2; /* in halfword */
+	len  = (ROBOSW_UNSHIFT(reg, ROBOSW_LEN) + 1) >> 1; /* in halfword */
 	page =  ROBOSW_UNSHIFT(reg, ROBOSW_PAGE);
 	reg  =  ROBOSW_UNSHIFT(reg, ROBOSW_REG);
 
