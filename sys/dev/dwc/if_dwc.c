@@ -1531,11 +1531,9 @@ static device_method_t dwc_methods[] = {
 	DEVMETHOD(ofw_bus_get_node,	ofw_bus_gen_get_node),
 	DEVMETHOD(ofw_bus_get_type,	ofw_bus_gen_get_type),
 
-#if 0
 	/** MDIO interface **/
 	DEVMETHOD(mdio_readreg,		dwc_miibus_read_reg),
 	DEVMETHOD(mdio_writereg,	dwc_miibus_write_reg),
-#endif
 
 	{ 0, 0 }
 };
