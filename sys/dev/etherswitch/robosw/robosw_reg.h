@@ -70,9 +70,8 @@
 		}							\
 	} while (0);
 
-/* "sc" and "dev" are required for roboswdump */
-#define ROBOSWDUMP						\
-	if (sc->sc_debug) {						\
+#define ROBOSWDUMP(sc, dev)					\
+	if (sc->sc_debug) {					\
 		ROBOSWDUMPREG(PORT_CTL(PORT0));			\
 		ROBOSWDUMPREG(PORT_CTL(PORT1));			\
 		ROBOSWDUMPREG(PORT_CTL(PORT2));			\
