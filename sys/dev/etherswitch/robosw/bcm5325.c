@@ -50,6 +50,7 @@ __FBSDID("$FreeBSD$");
 #define	BCM5325_PBVLAN_MIIPORT_MASK	0x100
 
 static int	bcm5325_reset(struct robosw_softc *sc);
+static void	bcm5325_init(struct robosw_softc *sc);
 static int	bcm5325_get_port_pvid(struct robosw_softc *sc, int port, int *pvid);
 static int	bcm5325_set_port_pvid(struct robosw_softc *sc, int port, int pvid);
 static int	bcm5325_vlan_enable_1q(struct robosw_softc *sc, int on);
@@ -67,7 +68,7 @@ static uint32_t	bcm5325_mib_get(struct robosw_softc *sc, int port, int metric);
 
 struct robosw_functions bcm5325_f = {
 	.api.reset = bcm5325_reset,
-	.api.init_context = NULL,
+	.api.init_context = bcm5325_init,
 	.api.mib_get = bcm5325_mib_get,
 	.api.vlan_get_pvid = bcm5325_get_port_pvid,
 	.api.vlan_set_pvid = bcm5325_set_port_pvid,
@@ -83,6 +84,14 @@ struct robosw_hal bcm5325_hal = {
 	.parent = NULL,
 	.self = &bcm5325_f
 };
+
+static void
+bcm5325_init(struct robosw_softc *sc)
+{
+
+	/* BCM5325 doesn't support software reset */
+	sc->sc_full_reset = ROBOSW_NORESET;
+}
 
 static uint32_t
 bcm5325_mib_get(struct robosw_softc *sc, int port, int metric)
@@ -124,8 +133,9 @@ bcm5325_reset(struct robosw_softc *sc)
 		err = robosw_op(sc, PORTMII_STATUS_OVERRIDE, &reg, 0);
 		if (err || !(reg & PORTMII_STATUS_REVERSE_MII))
 		{
-			device_printf(sc->sc_dev, "Unable to set RvMII mode\n");
-			return (ENXIO);
+			device_printf(sc->sc_dev, "Unable to set RvMII mode: %x\n", reg);
+			device_printf(sc->sc_dev, "or this chip doesn't support it\n");
+			/* return (ENXIO); */
 		}
 	}
 
