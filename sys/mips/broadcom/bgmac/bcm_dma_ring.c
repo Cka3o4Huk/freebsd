@@ -42,10 +42,7 @@ __FBSDID("$FreeBSD$");
 
 #include <machine/bus.h>
 
-#define	BHND_LOGGING	BHND_DEBUG_LEVEL
-#include <dev/bhnd/bhnd_debug.h>
-
-#include "bgmacvar.h"
+#include "bgmac.h"
 
 #include "bcm_dma_reg.h"
 #include "bcm_dma_desc.h"
@@ -72,8 +69,8 @@ bcm_dma_ring_alloc(struct bcm_dma *dma, struct resource *res, int ctl_id,
 
 	dev = rman_get_device(res);
 
-	BHND_DEBUG_DEV(dev, "setup of ring: %s[%d]",
-	    (is_tx) ? "TX" : "RX", ctl_id);
+	CTR3(KTR_BGMAC, "%s: setup of ring: %s[%d]", device_get_nameunit(dev),
+	    (is_tx) ? "TX" : "RX",  ctl_id);
 
 	/*
 	 * Allocate memory for new ring

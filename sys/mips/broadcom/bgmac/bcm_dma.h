@@ -80,8 +80,13 @@ struct bwn_plcp6 {
 
 #define	BCM_DMA_RINGMEMSIZE		PAGE_SIZE
 
+#if 1
 #define	BCM_TXRING_SLOTS		64
 #define	BCM_RXRING_SLOTS		64
+# else
+#define	BCM_TXRING_SLOTS		4096
+#define	BCM_RXRING_SLOTS		4096
+#endif
 
 /* 32-bit DMA */
 

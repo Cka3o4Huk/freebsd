@@ -58,15 +58,11 @@ __FBSDID("$FreeBSD$");
 #include <machine/bus.h>
 #include <machine/resource.h>
 
-#define	BHND_LOGGING	BHND_INFO_LEVEL
-
 #include "bgmac.h"
 #include "bgmacvar.h"
 #include "bgmacreg.h"
 
 #include "bcm_dma.h"
-
-#include <dev/bhnd/bhnd_debug.h>
 
 /* ***************************************************************
  * 	Internal prototypes
@@ -122,8 +118,8 @@ bgmac_start_locked(struct ifnet *ifp)
 		 */
 
 		for (m0 = m_head; m0 != NULL; m0 = m0->m_next)
-			BHND_DEBUG_DEV(sc->dev, "TX[      ] mbuf[%d]",
-			    m0->m_len);
+			CTR3(KTR_BGMAC, "%s: TX[      ] mbuf[%d] %p",
+			    device_get_nameunit(sc->dev),m0->m_len, m_head);
 
 		if (m_head->m_next != NULL) {
 			/* packet is split into set of small mbufs. merge them */
@@ -136,8 +132,8 @@ bgmac_start_locked(struct ifnet *ifp)
 			/* m_defrag freed src mbuf chain, good by m_head */
 			m_head = m0;
 			for (m0 = m_head; m0 != NULL; m0 = m0->m_next)
-				BHND_DEBUG_DEV(sc->dev, "TX[defrag] mbuf[%d]",
-				    m0->m_len);
+				CTR2(KTR_BGMAC, "%s: TX[defrag] mbuf[%d]",
+				    device_get_nameunit(sc->dev),m0->m_len);
 		}
 
 		err = bcm_dma_tx_start(sc->dma, m_head);
@@ -149,7 +145,7 @@ bgmac_start_locked(struct ifnet *ifp)
 			break;
 		}
 		++count;
-		BHND_DEBUG_DEV(sc->dev,"TX: pkt sent");
+		CTR1(KTR_BGMAC, "%s: TX: pkt sent", device_get_nameunit(sc->dev));
 
 		/*
 		 * If there's a BPF listener, bounce a copy of this frame
