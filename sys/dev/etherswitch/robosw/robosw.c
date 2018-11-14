@@ -525,7 +525,7 @@ robosw_reset(device_t dev)
 
 	if (sc->sc_full_reset != ROBOSW_TRYRESET) {
 		device_printf(dev, "reset: skipped (%d)\n", sc->sc_full_reset);
-		return (0);
+		goto postreset;
 	}
 
 	err = robosw_write4(sc, SWITCH_RESET, 0xff);
@@ -543,6 +543,7 @@ robosw_reset(device_t dev)
 		return (err);
 	}
 
+postreset:
 	/* Post-reset actions */
 	if (sc->hal.api.reset != NULL)
 		err = sc->hal.api.reset(sc);
