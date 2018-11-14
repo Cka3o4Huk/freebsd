@@ -3,7 +3,15 @@
 .PATH:	${SRCTOP}/sys/mips/broadcom/bgmac
 
 KMOD=	bgmac
-SRCS=	bcm_dma_ops.c bcm_dma_ring.c bcm_dma_rx.c bcm_dma_tx.c bcm_dma.c bgmac_ddb.c bgmac_tx.c bgmac.c
+SRCS=	bcm_dma_ops.c	\
+	bcm_dma_ring.c 	\
+	bcm_dma_rx.c	\
+	bcm_dma_tx.c	\
+	bcm_dma.c	\
+	bgmac_ddb.c	\
+	bgmac_tx.c	\
+	bgmac.c		\
+	bgmac_sysctl.c
 
 SRCS+=	miidevs.h
 #SRCS+=	device_if.h bus_if.h

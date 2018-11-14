@@ -45,7 +45,6 @@ __FBSDID("$FreeBSD$");
 #include <sys/socket.h>
 #include <sys/sockio.h>
 #include <sys/mutex.h>
-#include <sys/sysctl.h>
 #include <sys/ktr.h>
 #include <sys/kdb.h>
 
@@ -78,20 +77,10 @@ __FBSDID("$FreeBSD$");
 #include <machine/bus.h>
 #include <machine/resource.h>
 
-#if 1
-#define	BHND_LOGGING	BHND_TRACE_LEVEL
-#define KTR_BGMAC	KTR_DEV
-#else
-#define	BHND_LOGGING	BHND_INFO_LEVEL
-#define KTR_BGMAC	0
-#endif
+#include "bgmac.h"
 
 #include <dev/bhnd/bhnd.h>
 #include <dev/bhnd/bhnd_ids.h>
-
-#include "bgmac.h"
-#include "bgmacvar.h"
-#include "bgmacreg.h"
 
 #include "bcm_dma.h"
 
@@ -145,9 +134,6 @@ static int	bgmac_if_ioctl(if_t ifp, u_long command, caddr_t data);
 static int	bgmac_if_mediachange(struct ifnet *ifp);
 static void	bgmac_if_mediastatus(struct ifnet *ifp, struct ifmediareq *ifmr);
 
-/* MIB */
-static int	bgmac_mib(SYSCTL_HANDLER_ARGS);
-
 /****************************************************************************
  * Implementation
  ****************************************************************************/
@@ -186,6 +172,8 @@ bgmac_attach(device_t dev)
 	sc = device_get_softc(dev);
 	sc->dev = dev;
 
+	CTR1(KTR_BGMAC, "%s: ----- START ATTACH -----", device_get_nameunit(dev));
+
 	/* Allocate bus resources */
 	error = bus_alloc_resources(dev, bgmac_rspec, res);
 	if (error){
@@ -204,7 +192,11 @@ bgmac_attach(device_t dev)
 	}
 
 	bgmac_print_debug(sc);
+
+	/* Reset breaks BCM5356 due to power down of internal ethernet switch */
+#if defined(notyet)
 	bhnd_reset_hw(dev, 0, 0);
+#endif /* notyet */
 
 	/* Hook interrupt */
 	error = bus_setup_intr(dev, sc->irq, INTR_TYPE_NET | INTR_MPSAFE,
@@ -254,16 +246,24 @@ bgmac_attach(device_t dev)
 	SYSCTL_ADD_PROC(ctx, SYSCTL_CHILDREN(tree), OID_AUTO,
 	    name, CTLFLAG_RD | CTLTYPE_U16, sc,
 	    0,
-	    bgmac_mib, "I", "number of packets received by port");
+	    bgmac_sysctl_mib, "I", "number of packets received by port");
 
 	snprintf(name, IFNAMSIZ, "cpu_tx");
 
 	SYSCTL_ADD_PROC(ctx, SYSCTL_CHILDREN(tree), OID_AUTO,
 	    name, CTLFLAG_RD | CTLTYPE_U16, sc,
 	    1,
-	    bgmac_mib, "I", "number of packets sent by port");
+	    bgmac_sysctl_mib, "I", "number of packets sent by port");
 
-	CTR1(KTR_BGMAC, "%s: ----- AFTER -----\n", device_get_nameunit(dev));
+	snprintf(name, IFNAMSIZ, "dump");
+
+	SYSCTL_ADD_PROC(ctx, SYSCTL_CHILDREN(tree), OID_AUTO,
+	    name, CTLFLAG_RD | CTLTYPE_STRING, sc,
+	    0,
+	    bgmac_sysctl_dump, "A", "dump of registers");
+
+
+	CTR1(KTR_BGMAC, "%s: ----- AFTER ATTACH -----", device_get_nameunit(dev));
 	bgmac_print_debug(sc);
 
 	return 	0;
@@ -388,6 +388,12 @@ bgmac_chip_force_init(struct bgmac_softc *sc)
 	CTR2(KTR_BGMAC, "%s: request clock gating HT: err = 0x%x",
 		    device_get_nameunit(dev), error);
 	if (error != 0)
+		return (error);
+
+	error = bhnd_request_ext_rsrc(dev, 1);
+	CTR2(KTR_BGMAC, "%s: request external PMU resource: err = 0x%x",
+		    device_get_nameunit(dev), error);
+	if(error != 0)
 		return (error);
 
 	/* Flow control - on/off and pause */
@@ -627,7 +633,6 @@ bgmac_if_ioctl(if_t ifp, u_long command, caddr_t data)
 			}
 		} else if (ifp->if_drv_flags & IFF_DRV_RUNNING)
 			bgmac_chip_stop_txrx(sc);
-		bgmac_print_debug(sc);
 		BGMAC_UNLOCK(sc);
 		break;
 	case SIOCADDMULTI:
@@ -846,34 +851,6 @@ bgmac_rxeof(struct device *dev, struct mbuf *m, struct bcm_rx_header *rxhdr)
 	BGMAC_UNLOCK(sc);
 	(*ifp->if_input)(ifp, m);
 	BGMAC_LOCK(sc);
-}
-
-static int
-bgmac_mib(SYSCTL_HANDLER_ARGS)
-{
-	struct bgmac_softc	*sc;
-	uint32_t		 value;
-	int			 metric;
-
-	sc = (struct bgmac_softc *) arg1;
-	metric = (arg2 & 0xF);
-
-	switch (metric) {
-	case 0:
-		value = (
-			bus_read_4(sc->mem, BGMAC_MIB_RX_PCKTS) +
-			bus_read_4(sc->mem, BGMAC_MIB_RX_BROADCAST_PCKTS) +
-			bus_read_4(sc->mem, BGMAC_MIB_RX_MULTICAST_PCKTS)
-			);
-		break;
-	case 1:
-		value = bus_read_4(sc->mem, BGMAC_MIB_TX_PCKTS);
-		break;
-	default:
-		value = 0;
-	}
-
-	return (sysctl_handle_16(oidp, NULL, value, req));
 }
 
 /**

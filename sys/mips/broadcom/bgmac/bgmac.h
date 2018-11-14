@@ -31,7 +31,16 @@
 #define _MIPS_BROADCOM_BGMAC_BGMAC_H_
 
 #include <sys/bus.h>
+#include <sys/sysctl.h>
 #include <machine/bus.h>
+
+#if 1
+#define	BHND_LOGGING	BHND_TRACE_LEVEL
+#define KTR_BGMAC	KTR_DEV
+#else
+#define	BHND_LOGGING	BHND_INFO_LEVEL
+#define KTR_BGMAC	0
+#endif
 
 #include <dev/bhnd/bhnd_debug.h>
 
@@ -146,4 +155,7 @@ bgmac_decode_ctl(uint32_t val)
 
 void	bgmac_if_start(struct ifnet *ifp);
 void	bgmac_print_debug(struct bgmac_softc* sc);
+int	bgmac_sysctl_dump(SYSCTL_HANDLER_ARGS);
+int	bgmac_sysctl_mib(SYSCTL_HANDLER_ARGS);
+
 #endif /* _MIPS_BROADCOM_BGMAC_BGMAC_H_ */
