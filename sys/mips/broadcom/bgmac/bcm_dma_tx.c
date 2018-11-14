@@ -62,9 +62,6 @@ __FBSDID("$FreeBSD$");
 #include <netinet/ip.h>
 #include <netinet/tcp.h>
 
-#define	BHND_LOGGING	BHND_INFO_LEVEL
-#include <dev/bhnd/bhnd_debug.h>
-
 #include "bgmac.h"
 #include "bgmacvar.h"
 #include "bgmacreg.h"
@@ -92,8 +89,8 @@ bcm_dma_tx_start(struct bcm_dma *dma, struct mbuf *m)
 	slot = bcm_dma_ring_get_head(dr);
 	dr->getdesc(dr, slot, &desc, &mt);
 
-	BHND_DEBUG_DEV(dev, "TX slot[%d]: tag %p, map %p, mbuf %d", slot,
-	    dr->dr_ring_dtag, mt->mt_dmap, m->m_len);
+	CTR5(KTR_BGMAC, "sending TX slot[%d]: tag %p, map %p, mbuf %p size %d",
+	    slot, dr->dr_ring_dtag, mt->mt_dmap, m, m->m_len);
 
 	error = bus_dmamap_load_mbuf(dma->txbuf_dtag, mt->mt_dmap, m,
 		bcm_dmamap_callback_mbuf, &mt->mt_paddr, BUS_DMA_NOWAIT);
@@ -103,10 +100,21 @@ bcm_dma_tx_start(struct bcm_dma *dma, struct mbuf *m)
 		goto fail;
 	}
 
+	mt->mt_m = m;
 	bus_dmamap_sync(dma->txbuf_dtag, mt->mt_dmap, BUS_DMASYNC_PREWRITE);
+
+	/* Update NIC about new packet */
 	dr->setdesc(dr, desc, mt->mt_paddr, m->m_pkthdr.len, 1, 1, 1);
 	bus_dmamap_sync(dr->dr_ring_dtag, dr->dr_ring_dmap, BUS_DMASYNC_PREWRITE);
 	dr->dr_head_slot = bcm_dma_ring_get_nextslot(dr, slot);
+	if (dr->dr_head_slot == bcm_dma_ring_get_tail(dr)) {
+		/* Force TX processing */
+		bcm_dma_tx(dr);
+		if (dr->dr_head_slot == bcm_dma_ring_get_tail(dr))
+			CTR5(KTR_BGMAC, "ERROR: TX ring is full: TX slot[%d],"
+					" tag %p, map %p, mbuf %p size %d",
+			    slot, dr->dr_ring_dtag, mt->mt_dmap, m, m->m_len);
+	}
 	dr->start_transfer(dr, dr->dr_head_slot);
 	return (0);
 fail:
@@ -122,7 +130,7 @@ bcm_dma_tx(struct bcm_dma_ring *dr)
 	struct bcm_dma			*dma;
 	struct bcm_dmadesc_generic	*desc;
 	struct bcm_dmadesc_meta		*meta;
-	int				 slot;
+	int				 slot, target;
 
 	BGMAC_ASSERT_RING_LOCKED(dr);
 	dma = dr->dma;
@@ -130,17 +138,25 @@ bcm_dma_tx(struct bcm_dma_ring *dr)
 
 	/* Get slot free for driver, i.e. device sent all data */
 	slot = bcm_dma_ring_get_tail(dr);
+	target = dr->get_curslot(dr);
 
-	KASSERT(slot >= 0 && slot < dr->dr_numslots,
-	    ("%s:%d: fail - %d", __func__, __LINE__, slot));
-	dr->getdesc(dr, slot, &desc, &meta);
+	while (slot != target)
+	{
+		KASSERT(slot >= 0 && slot < dr->dr_numslots,
+		    ("%s:%d: fail - %d", __func__, __LINE__, slot));
+		dr->getdesc(dr, slot, &desc, &meta);
 
-	bus_dmamap_sync(dma->txbuf_dtag, meta->mt_dmap, BUS_DMASYNC_POSTWRITE);
-	bus_dmamap_unload(dma->txbuf_dtag, meta->mt_dmap);
+		bus_dmamap_sync(dma->txbuf_dtag, meta->mt_dmap, BUS_DMASYNC_POSTWRITE);
+		bus_dmamap_unload(dma->txbuf_dtag, meta->mt_dmap);
 
-	if (meta->mt_m != NULL)
-		m_freem(meta->mt_m);
-	meta->mt_m = NULL;
+		CTR5(KTR_BGMAC, "free mbuf TX slot[%d->%d]: tag %p, map %p, mbuf %p",
+		    slot, target, dr->dr_ring_dtag, meta->mt_dmap, meta->mt_m);
 
-	dr->dr_tail_slot = bcm_dma_ring_get_nextslot(dr, slot);
+		if (meta->mt_m != NULL)
+			m_freem(meta->mt_m);
+		meta->mt_m = NULL;
+
+		slot = bcm_dma_ring_get_nextslot(dr, slot);
+	}
+	dr->dr_tail_slot = slot;
 }
