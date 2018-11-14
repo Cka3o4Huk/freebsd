@@ -198,7 +198,7 @@ robosw_attach(device_t dev)
 	    "Broadcom RoboSwitch %s", sc->chipname);
 	device_printf(dev, "found switch %s\n", sc->chipname);
 
-	ROBOSWDUMP;
+	ROBOSWDUMP(sc, dev);
 
 	/* Turn off forwarding to start manipulations with rules/routes */
 	err = robosw_enable_fw(dev, 0);
@@ -292,7 +292,7 @@ robosw_attach(device_t dev)
 	}
 
 	if (bootverbose)
-		ROBOSWDUMP;
+		ROBOSWDUMP(sc, dev);
 
 	/*
 	 * TODO:

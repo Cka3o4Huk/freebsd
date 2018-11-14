@@ -138,7 +138,10 @@ DB_FUNC(dump, db_show_roboswdump, db_robosw_table, CS_OWN, NULL)
 
 	if (dev != NULL) {
 		sc = device_get_softc(dev);
-		ROBOSWDUMP;
+		t = sc->sc_debug;
+		sc->sc_debug = 1;
+		ROBOSWDUMP(sc, dev);
+		sc->sc_debug = t;
 	} else
 		db_printf("usage: show robosw dump <robosw>\n");
 
