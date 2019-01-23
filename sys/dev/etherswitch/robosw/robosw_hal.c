@@ -45,7 +45,7 @@ __FBSDID("$FreeBSD$");
 #endif
 
 #include "robosw_reg.h"
-#include "robosw_hal.h"
+#include "robosw_var.h"
 
 struct robosw_hal_mapping {
 	uint32_t		 id;

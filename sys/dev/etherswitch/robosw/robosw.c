@@ -82,7 +82,6 @@ __FBSDID("$FreeBSD$");
 
 #include "robosw_var.h"
 #include "robosw_reg.h"
-#include "robosw_hal.h"
 
 #include "etherswitch_if.h"
 
@@ -90,7 +89,7 @@ MALLOC_DEFINE(M_BCMSWITCH, "robosw", "robosw data structures");
 
 #ifdef FDT
 static const struct ofw_compat_data robosw_compat_data[] = {
-	{ "brcm,bcm53125",		0x53125 },
+	{ "brcm,bcm53125",		BCM53125 },
 	{ NULL,				0 }
 };
 #endif /* FDT */
@@ -120,9 +119,6 @@ static etherswitch_info_t*	robosw_getinfo(device_t dev);
 static int	robosw_ifm_upd(struct ifnet *ifp);
 static void	robosw_ifm_sts(struct ifnet *ifp, struct ifmediareq *ifmr);
 
-/* MIB */
-static int	robosw_mib(SYSCTL_HANDLER_ARGS);
-
 /*********************** Implementation ************************************/
 
 static int
@@ -146,8 +142,6 @@ static int
 robosw_attach(device_t dev)
 {
 	struct robosw_softc	*sc;
-	struct sysctl_ctx_list	*ctx;
-	struct sysctl_oid	*tree;
 	int			 i, err;
 	char 			 name[IFNAMSIZ];
 
@@ -166,17 +160,12 @@ robosw_attach(device_t dev)
 
 	mtx_init(&sc->sc_mtx, "robosw", NULL, MTX_DEF);
 
-	ctx = device_get_sysctl_ctx(dev);
-	tree = device_get_sysctl_tree(dev);
-	SYSCTL_ADD_UINT(ctx, SYSCTL_CHILDREN(tree), OID_AUTO,
-	    "debug", CTLFLAG_RW, &sc->sc_debug, 0, "control debugging printfs");
-
 	/*
 	 * Initialize HAL (by switch ID and chipcommon ID)
 	 */
 	robosw_hal_init(sc);
-	if (sc->hal.api.vlan_enable_1q == NULL) {
-		device_printf(dev, "[ERROR] no HAL for enable 1q\n");
+	if (ROBOSW_API_SOFTC(sc)->vlan_enable_1q == NULL) {
+		device_printf(dev, "[ERROR] no HAL to enable 1q\n");
 		goto fail;
 	}
 
@@ -191,8 +180,8 @@ robosw_attach(device_t dev)
 	sc->info.es_vlan_caps = 0;
 	sc->cpuport = PORTMII;
 
-	if(sc->hal.api.init_context != NULL)
-		sc->hal.api.init_context(sc);
+	if(ROBOSW_API_SOFTC(sc)->init_context != NULL)
+		ROBOSW_API_SOFTC(sc)->init_context(sc);
 
 	snprintf(sc->info.es_name, ETHERSWITCH_NAMEMAX,
 	    "Broadcom RoboSwitch %s", sc->chipname);
@@ -216,20 +205,20 @@ robosw_attach(device_t dev)
 	}
 
 	/* Does HAL support Port-based VLAN? */
-	if (sc->hal.api.vlan_set_pvlan_group != NULL) {
+	if (ROBOSW_API_SOFTC(sc)->vlan_set_pvlan_group != NULL) {
 		sc->info.es_vlan_caps |= ETHERSWITCH_VLAN_PORT;
 		sc->vlan_mode = ETHERSWITCH_VLAN_PORT;
 	}
 
-	if ((sc->hal.api.vlan_enable_1q != NULL) &&
-	    (sc->hal.api.vlan_set_vlan_group != NULL))
+	if ((ROBOSW_API_SOFTC(sc)->vlan_enable_1q != NULL) &&
+	    (ROBOSW_API_SOFTC(sc)->vlan_set_vlan_group != NULL))
 	{
 		device_printf(dev, "VLAN settings...\n");
 		sc->info.es_vlan_caps |= ETHERSWITCH_VLAN_DOT1Q;
 		/* Enable VLAN support and set defaults */
-		sc->hal.api.vlan_enable_1q(sc, 1);
+		ROBOSW_API_SOFTC(sc)->vlan_enable_1q(sc, 1);
 		sc->vlan_mode = ETHERSWITCH_VLAN_DOT1Q;
-		sc->hal.api.vlan_set_vlan_group(sc, ROBOSW_DEF_VLANID,
+		ROBOSW_API_SOFTC(sc)->vlan_set_vlan_group(sc, ROBOSW_DEF_VLANID,
 		    ROBOSW_DEF_VLANID | ETHERSWITCH_VID_VALID, ROBOSW_DEF_MASK,
 		    ROBOSW_DEF_MASK, 0);
 
@@ -239,7 +228,7 @@ robosw_attach(device_t dev)
 		 */
 		for (i = 0; i < sc->info.es_nports; i++)
 			/* set PVID to default value */
-			sc->hal.api.vlan_set_pvid(sc, i, ROBOSW_DEF_VLANID);
+			ROBOSW_API_SOFTC(sc)->vlan_set_pvid(sc, i, ROBOSW_DEF_VLANID);
 	}
 
 	if ((sc->info.es_vlan_caps & (ETHERSWITCH_VLAN_PORT | ETHERSWITCH_VLAN_DOT1Q)) == 0)
@@ -283,7 +272,6 @@ robosw_attach(device_t dev)
 	}
 #endif
 
-
 	/* Turn on forwarding - done with manipulations with rules/routes */
 	err = robosw_enable_fw(dev, 1);
 	if (err != 0) {
@@ -309,7 +297,7 @@ robosw_attach(device_t dev)
 		sc->ifname[i] = malloc(strlen(name)+1, M_DEVBUF, M_WAITOK);
 		bcopy(name, sc->ifname[i], strlen(name)+1);
 		if_initname(sc->ifp[i], sc->ifname[i], i);
-		err = mii_attach(dev, &sc->miibus[i], sc->ifp[i],
+		err = mii_attach(dev, &sc->sc_miibus[i], sc->ifp[i],
 			robosw_ifm_upd, robosw_ifm_sts,
 			BMSR_DEFCAPMASK, i, MII_OFFSET_ANY, 0);
 
@@ -318,40 +306,9 @@ robosw_attach(device_t dev)
 			    err);
 			goto fail;
 		}
-
-		if (sc->hal.api.mib_get == NULL)
-			continue;
-
-		snprintf(name, IFNAMSIZ, "port%drx", i);
-
-		SYSCTL_ADD_PROC(ctx, SYSCTL_CHILDREN(tree), OID_AUTO,
-		    name, CTLFLAG_RD | CTLTYPE_U16, sc,
-		    (i << 4) | ROBOSW_MIB_GOODRXPKTS, robosw_mib, "I",
-		    "number of packets received by port");
-
-		snprintf(name, IFNAMSIZ, "port%dtx", i);
-
-		SYSCTL_ADD_PROC(ctx, SYSCTL_CHILDREN(tree), OID_AUTO,
-		    name, CTLFLAG_RD | CTLTYPE_U16, sc,
-		    (i << 4) | ROBOSW_MIB_GOODTXPKTS, robosw_mib, "I",
-		    "number of packets sent by port");
 	}
 
-	if (sc->hal.api.mib_get != NULL) {
-		snprintf(name, IFNAMSIZ, "cpu_rx");
-
-		SYSCTL_ADD_PROC(ctx, SYSCTL_CHILDREN(tree), OID_AUTO,
-		    name, CTLFLAG_RD | CTLTYPE_U16, sc,
-		    (sc->cpuport << 4) | ROBOSW_MIB_GOODRXPKTS,
-		    robosw_mib, "I", "number of packets received by port");
-
-		snprintf(name, IFNAMSIZ, "cpu_tx");
-
-		SYSCTL_ADD_PROC(ctx, SYSCTL_CHILDREN(tree), OID_AUTO,
-		    name, CTLFLAG_RD | CTLTYPE_U16, sc,
-		    (sc->cpuport << 4)| ROBOSW_MIB_GOODTXPKTS,
-		    robosw_mib, "I", "number of packets sent by port");
-	}
+	robosw_init_sysctl(dev);
 
 	bus_generic_probe(dev);
 	bus_generic_attach(dev);
@@ -379,8 +336,8 @@ robosw_detach(device_t dev)
 	callout_drain(&sc->callout_tick);
 
 	for (phy = 0; phy < sc->info.es_nports; phy++) {
-		if (sc->miibus[phy] != NULL)
-			device_delete_child(dev, sc->miibus[phy]);
+		if (sc->sc_miibus[phy] != NULL)
+			device_delete_child(dev, sc->sc_miibus[phy]);
 		if (sc->ifp[phy] != NULL)
 			if_free(sc->ifp[phy]);
 		free(sc->ifname[phy], M_DEVBUF);
@@ -421,7 +378,7 @@ robosw_mii_pollstat(struct robosw_softc *sc)
 {
 
 	for(int i = 0; i < sc->info.es_nports - 1; i++)
-		mii_pollstat(device_get_softc(sc->miibus[i]));
+		mii_pollstat(device_get_softc(sc->sc_miibus[i]));
 }
 
 /*************** SWITCH register access via PSEUDO PHY over MII ************/
@@ -429,14 +386,33 @@ int
 robosw_op(struct robosw_softc *sc, uint32_t reg, uint32_t *res, int op)
 {
 	uint64_t 	data;
-	uint16_t	data_reg, data_val;
-	uint8_t		len, page;
-	int		ind, tmp;
+	int		err;
 
 	if (res == NULL)
 		return (EINVAL);
 
 	data = (op == ROBOSW_WRITEOP) ? *res : 0;
+
+	err = robosw_op64(sc, reg, &data, op);
+	if (err != 0)
+		return (err);
+
+	if (op == ROBOSW_READOP)
+		*res = data & UINT32_MAX;
+
+	return (0);
+}
+
+int
+robosw_op64(struct robosw_softc *sc, uint32_t reg, uint64_t *data, int op)
+{
+	uint16_t	data_reg, data_val;
+	uint8_t		len, page;
+	int		ind, tmp;
+
+	if (data == NULL)
+		return (EINVAL);
+
 	len  = (ROBOSW_UNSHIFT(reg, ROBOSW_LEN) + 1) >> 1; /* in halfword */
 	page =  ROBOSW_UNSHIFT(reg, ROBOSW_PAGE);
 	reg  =  ROBOSW_UNSHIFT(reg, ROBOSW_REG);
@@ -448,7 +424,7 @@ robosw_op(struct robosw_softc *sc, uint32_t reg, uint32_t *res, int op)
 	if (op == ROBOSW_WRITEOP)
 		for (ind = 0; ind < len; ind++) {
 			data_reg = ROBOSW_DATA_REG_BASE + ind;
-			data_val = (uint16_t)((data >> (16*ind)) & 0xffff);
+			data_val = (uint16_t)((*data >> (16*ind)) & 0xffff);
 			ROBOSW_WRITEREG(data_reg, data_val);
 		}
 
@@ -471,9 +447,11 @@ robosw_op(struct robosw_softc *sc, uint32_t reg, uint32_t *res, int op)
 
 	/* get result */
 	if (op == ROBOSW_READOP) {
-		for (ind = 0; ind < len; ind++)
-			data |= (ROBOSW_READREG(ROBOSW_DATA_REG_BASE + ind)) << (16*ind);
-		*res = data & UINT32_MAX;
+		*data = 0;
+		for (ind = 0; ind < len; ind++) {
+			data_val = (ROBOSW_READREG(ROBOSW_DATA_REG_BASE + ind));
+			*data |= ((uint64_t)data_val) << (16*ind);
+		}
 	}
 
 	/* Check that read/write status should be NOP / idle */
@@ -494,7 +472,8 @@ robosw_read4(struct robosw_softc *sc, uint32_t reg)
 
 	err = robosw_op(sc, reg, &val, 0);
 	if (err) {
-		device_printf(sc->sc_dev, "read of register 0x%x failed with error code %x\n", reg, err);
+		device_printf(sc->sc_dev, "read of register 0x%x failed with "
+		    "error code %x\n", reg, err);
 		return (UINT32_MAX);
 	}
 
@@ -545,8 +524,8 @@ robosw_reset(device_t dev)
 
 postreset:
 	/* Post-reset actions */
-	if (sc->hal.api.reset != NULL)
-		err = sc->hal.api.reset(sc);
+	if (ROBOSW_API_SOFTC(sc)->reset != NULL)
+		err = ROBOSW_API_SOFTC(sc)->reset(sc);
 
 	return (err);
 }
@@ -579,19 +558,6 @@ robosw_enable_fw(device_t dev, uint32_t forward)
 	return 0;
 }
 
-static int
-robosw_mib(SYSCTL_HANDLER_ARGS)
-{
-	struct robosw_softc	*sc;
-	uint32_t		 value;
-	int			 port, metric;
-
-	sc = (struct robosw_softc *) arg1;
-	port = (arg2 >> 4);
-	metric = (arg2 & 0xF);
-	value = sc->hal.api.mib_get(sc, port, metric);
-	return (sysctl_handle_16(oidp, NULL, value, req));
-}
 
 /****************** EtherSwitch interface **********************************/
 static etherswitch_info_t*
@@ -637,12 +603,12 @@ robosw_getport(device_t dev, etherswitch_port_t *p)
 	if (p->es_port >= sc->info.es_nports || p->es_port < 0)
 		return (EINVAL);
 
-	err = sc->hal.api.vlan_get_pvid(sc, p->es_port, &p->es_pvid);
+	err = ROBOSW_API_SOFTC(sc)->vlan_get_pvid(sc, p->es_port, &p->es_pvid);
 	if (err)
 		return (err);
 
 	if(p->es_port != sc->info.es_nports - 1) {
-		mii = device_get_softc(sc->miibus[p->es_port]);
+		mii = device_get_softc(sc->sc_miibus[p->es_port]);
 		err = ifmedia_ioctl(mii->mii_ifp, &p->es_ifr, &mii->mii_media,
 			  SIOCGIFMEDIA);
 	} else {
@@ -669,7 +635,7 @@ robosw_setport(device_t dev, etherswitch_port_t *p)
 	if (p->es_port < 0 || p->es_port > sc->info.es_nports)
 		return (EINVAL);
 
-	err = sc->hal.api.vlan_set_pvid(sc, p->es_port, p->es_pvid);
+	err = ROBOSW_API_SOFTC(sc)->vlan_set_pvid(sc, p->es_port, p->es_pvid);
 	if (err)
 		return (err);
 
@@ -677,7 +643,7 @@ robosw_setport(device_t dev, etherswitch_port_t *p)
 	if (p->es_port == sc->info.es_nports - 1)
 		return (0);
 
-	mii = device_get_softc(sc->miibus[p->es_port]);
+	mii = device_get_softc(sc->sc_miibus[p->es_port]);
 	if (mii == NULL)
 		return (ENXIO);
 
@@ -693,17 +659,19 @@ robosw_getvgroup(device_t dev, etherswitch_vlangroup_t *vg)
 
 	sc = device_get_softc(dev);
 
-	if (sc->hal.api.vlan_get_vlan_group == NULL)
+	if (ROBOSW_API_SOFTC(sc)->vlan_get_vlan_group == NULL)
 		return (ENXIO);
 
 	if (sc->vlan_mode == ETHERSWITCH_VLAN_PORT) {
-		err = sc->hal.api.vlan_get_pvlan_group(sc, vg->es_vlangroup,
+		err = ROBOSW_API_SOFTC(sc)->vlan_get_pvlan_group(sc,
+				vg->es_vlangroup,
 				&vg->es_vid,
 				&vg->es_member_ports,
 				&vg->es_untagged_ports,
 				&vg->es_fid);
 	} else {
-		err = sc->hal.api.vlan_get_vlan_group(sc, vg->es_vlangroup,
+		err = ROBOSW_API_SOFTC(sc)->vlan_get_vlan_group(sc,
+				vg->es_vlangroup,
 				&vg->es_vid,
 				&vg->es_member_ports,
 				&vg->es_untagged_ports,
@@ -721,17 +689,19 @@ robosw_setvgroup(device_t dev, etherswitch_vlangroup_t *vg)
 
 	sc = device_get_softc(dev);
 
-	if (sc->hal.api.vlan_set_vlan_group == NULL)
+	if (ROBOSW_API_SOFTC(sc)->vlan_set_vlan_group == NULL)
 		return (ENXIO);
 
 	if (sc->vlan_mode == ETHERSWITCH_VLAN_PORT) {
-		err = sc->hal.api.vlan_set_pvlan_group(sc, vg->es_vlangroup,
+		err = ROBOSW_API_SOFTC(sc)->vlan_set_pvlan_group(sc,
+				vg->es_vlangroup,
 				vg->es_vid,
 				vg->es_member_ports,
 				vg->es_untagged_ports,
 				vg->es_fid);
 	} else {
-		err = sc->hal.api.vlan_set_vlan_group(sc, vg->es_vlangroup,
+		err = ROBOSW_API_SOFTC(sc)->vlan_set_vlan_group(sc,
+				vg->es_vlangroup,
 				vg->es_vid,
 				vg->es_member_ports,
 				vg->es_untagged_ports,
@@ -772,11 +742,11 @@ robosw_setconf(device_t dev, etherswitch_conf_t *conf)
 		switch (conf->vlan_mode) {
 		case ETHERSWITCH_VLAN_DOT1Q:
 			sc->vlan_mode = ETHERSWITCH_VLAN_DOT1Q;
-			sc->hal.api.vlan_enable_1q(sc, 1);
+			ROBOSW_API_SOFTC(sc)->vlan_enable_1q(sc, 1);
 			break;
 		case ETHERSWITCH_VLAN_PORT:
 			sc->vlan_mode = ETHERSWITCH_VLAN_PORT;
-			sc->hal.api.vlan_enable_1q(sc, 0);
+			ROBOSW_API_SOFTC(sc)->vlan_enable_1q(sc, 0);
 			break;
 		default:
 			sc->vlan_mode = 0;
@@ -795,7 +765,7 @@ robosw_ifm_upd(struct ifnet *ifp)
 	device_t		 bus;
 
 	sc = ifp->if_softc;
-	bus = sc->miibus[ifp->if_dunit];
+	bus = sc->sc_miibus[ifp->if_dunit];
 	mii = device_get_softc(bus);
 
 	mii_mediachg(mii);
@@ -810,7 +780,7 @@ robosw_ifm_sts(struct ifnet *ifp, struct ifmediareq *ifmr)
 	device_t		 bus;
 
 	sc = ifp->if_softc;
-	bus = sc->miibus[ifp->if_dunit];
+	bus = sc->sc_miibus[ifp->if_dunit];
 	mii = device_get_softc(bus);
 
 	mii_pollstat(mii);
@@ -849,6 +819,9 @@ static device_method_t robosw_methods [] =
 #endif
 	DEVMETHOD(etherswitch_getconf,		robosw_getconf),
 	DEVMETHOD(etherswitch_setconf,		robosw_setconf),
+	DEVMETHOD(etherswitch_fetch_table, 	robosw_arl_table),
+	DEVMETHOD(etherswitch_fetch_table_entry,robosw_arl_entry),
+	DEVMETHOD(etherswitch_flush_all,	robosw_arl_flushall),
 	DEVMETHOD_END
 };
 
@@ -858,9 +831,9 @@ DEFINE_CLASS_0(robosw, robosw_driver, robosw_methods, sizeof(struct robosw_softc
 
 DRIVER_MODULE(robosw,      mdio, robosw_driver, robosw_devclass, 0, 0);
 DRIVER_MODULE(etherswitch, robosw, etherswitch_driver, etherswitch_devclass, 0, 0);
-DRIVER_MODULE(miibus,      robosw, miibus_driver, miibus_devclass, 0, 0);
+DRIVER_MODULE(sc_miibus,      robosw, miibus_driver, miibus_devclass, 0, 0);
 
 MODULE_DEPEND(robosw, mdio, 1, 1, 1);
 MODULE_DEPEND(robosw, etherswitch, 1, 1, 1);
-MODULE_DEPEND(robosw, miibus, 1, 1, 1);
+MODULE_DEPEND(robosw, sc_miibus, 1, 1, 1);
 MODULE_VERSION(robosw, 1);

@@ -33,7 +33,6 @@
 
 #include "robosw_var.h"
 #include "robosw_reg.h"
-#include "robosw_hal.h"
 
 static int	bcm5358_get_vlan_group(struct robosw_softc *sc, int vlan_group,
 		    int *vlan_id, int *members, int *untagged, int *forward_id);
