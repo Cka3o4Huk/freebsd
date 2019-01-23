@@ -33,7 +33,6 @@
 
 #include "robosw_var.h"
 #include "robosw_reg.h"
-#include "robosw_hal.h"
 
 static int	bcm53115_get_vlan_group(struct robosw_softc *sc, int vlan_group,
 		    int *vlan_id, int *members, int *untagged, int *forward_id);
@@ -45,13 +44,24 @@ static int 	bcm53115_vlan_enable_1q(struct robosw_softc *sc, int on);
 
 static uint32_t	bcm53115_mib_get(struct robosw_softc *sc, int port, int metric);
 
+static int	bcm53115_arl_iterator(struct robosw_softc *sc);
+static int	bcm53115_arl_next(struct robosw_softc *sc, int *portmask,
+		    uint8_t (*es_macaddr)[ETHER_ADDR_LEN], uint32_t *vid);
+
+#ifdef NOTYET
+static int	bcm53115_arl_cleanup(struct robosw_softc *sc,
+		    uint8_t (*es_macaddr)[ETHER_ADDR_LEN], uint32_t vid);
+#endif
+
 struct robosw_functions bcm53115_f = {
 	.api.reset = bcm53115_reset,
 	.api.init_context = bcm53115_init_context,
 	.api.mib_get = bcm53115_mib_get,
 	.api.vlan_enable_1q = bcm53115_vlan_enable_1q,
 	.api.vlan_get_vlan_group = bcm53115_get_vlan_group,
-	.api.vlan_set_vlan_group = bcm53115_set_vlan_group
+	.api.vlan_set_vlan_group = bcm53115_set_vlan_group,
+	.api.arl_iterator = bcm53115_arl_iterator,
+	.api.arl_next = bcm53115_arl_next
 };
 
 struct robosw_hal bcm53115_hal = {
@@ -210,3 +220,153 @@ bcm53115_set_vlan_group(struct robosw_softc *sc, int vlan_group,
 
 	return (0);
 }
+
+/* ARL functions */
+static int
+bcm53115_arl_iterator(struct robosw_softc *sc)
+{
+	uint32_t	val;
+
+	val = ARL_SEARCH_CTL_START;
+
+	CTR1(KTR_DEV,"robosw: start ARL iterator: %x", val);
+	ROBOSW_WR(ARL_SEARCH_CTL_53115, val, sc);
+	return (0);
+}
+
+static int
+bcm53115_arl_next(struct robosw_softc *sc, int *portmask,
+    uint8_t (*es_macaddr)[ETHER_ADDR_LEN], uint32_t *vid)
+{
+	uint32_t	val;
+	uint64_t	res;
+	int		ind;
+
+	ind = ROBOSW_OP_RETRY;
+	for (; ind > 0; ind--) {
+		ROBOSW_RD(ARL_SEARCH_CTL_53115, val, sc);
+		if ((val & ARL_SEARCH_CTL_VALID) == ARL_SEARCH_CTL_VALID)
+			break;
+
+		if ((val & ARL_SEARCH_CTL_DONE) == 0) {
+			CTR1(KTR_DEV,"robosw: finish ARL iterator: %x", val);
+			return (ENOENT);
+		}
+	}
+
+	ROBOSW_RD64(ARL_SEARCH_RESULT_53115_R0, res, sc);
+	ROBOSW_RD(ARL_SEARCH_RESULT_53115_RD0, val, sc);
+
+	CTR3(KTR_DEV,"robosw: valid ARL: 0x%x 0x%x%x", val,
+	    (res >> 32) & UINT32_MAX, res & UINT32_MAX);
+	if (portmask != NULL) {
+		*portmask = ROBOSW_UNSHIFT(val,ARL_SEARCH_RESULT_53115_D_PORTID);
+		CTR1(KTR_DEV,"robosw: portmask: 0x%x", *portmask);
+	}
+
+	if (es_macaddr != NULL)
+	{
+		(*es_macaddr)[0] = ROBOSW_UNSHIFT(res,ARL_SEARCH_RESULT_MAC0) & UINT8_MAX;
+		(*es_macaddr)[1] = ROBOSW_UNSHIFT(res,ARL_SEARCH_RESULT_MAC1) & UINT8_MAX;
+		(*es_macaddr)[2] = ROBOSW_UNSHIFT(res,ARL_SEARCH_RESULT_MAC2) & UINT8_MAX;
+		(*es_macaddr)[3] = ROBOSW_UNSHIFT(res,ARL_SEARCH_RESULT_MAC3) & UINT8_MAX;
+		(*es_macaddr)[4] = ROBOSW_UNSHIFT(res,ARL_SEARCH_RESULT_MAC4) & UINT8_MAX;
+		(*es_macaddr)[5] = ROBOSW_UNSHIFT(res,ARL_SEARCH_RESULT_MAC5) & UINT8_MAX;
+		CTR6(KTR_DEV,"robosw: mac addr: %x:%x:%x:%x:%x:%x",
+		    (*es_macaddr)[0], (*es_macaddr)[1], (*es_macaddr)[2],
+		    (*es_macaddr)[2], (*es_macaddr)[4], (*es_macaddr)[5]);
+	}
+
+	if (vid != NULL)
+	{
+		*vid = ROBOSW_UNSHIFT(res,ARL_SEARCH_RESULT_53115_VID);
+		CTR1(KTR_DEV,"robosw: vid: 0x%x", *vid);
+	}
+
+	return (0);
+}
+
+#ifdef NOTYET
+static int
+bcm5325_arl_cleanup(struct robosw_softc *sc,
+    uint8_t (*es_macaddr)[ETHER_ADDR_LEN], uint32_t vid)
+{
+	uint32_t	tmp;
+	uint64_t	tmp64;
+	int		ind;
+
+	tmp64 = 0;
+	tmp64 = tmp64 | ROBOSW_SHIFT((uint64_t)(*es_macaddr)[0],MAC_ADDRESS_INDEX_MAC0);
+	tmp64 = tmp64 | ROBOSW_SHIFT((uint64_t)(*es_macaddr)[1],MAC_ADDRESS_INDEX_MAC1);
+	tmp64 = tmp64 | ROBOSW_SHIFT((uint64_t)(*es_macaddr)[2],MAC_ADDRESS_INDEX_MAC2);
+	tmp64 = tmp64 | ROBOSW_SHIFT((uint64_t)(*es_macaddr)[3],MAC_ADDRESS_INDEX_MAC3);
+	tmp64 = tmp64 | ROBOSW_SHIFT((uint64_t)(*es_macaddr)[4],MAC_ADDRESS_INDEX_MAC4);
+	tmp64 = tmp64 | ROBOSW_SHIFT((uint64_t)(*es_macaddr)[5],MAC_ADDRESS_INDEX_MAC5);
+
+	device_printf(sc->sc_dev,
+	    "lookup ARL by MAC: 0x%llx and VID: 0x%x\n",
+	    tmp64, vid);
+	CTR3(KTR_DEV,"robosw: lookup ARL by MAC: 0x%x%x and VID: 0x%x",
+	    (tmp64 >> 32) & UINT32_MAX, tmp64 & UINT32_MAX, vid);
+
+	/* Read bucket from ARL table by MAC address and VID */
+	ROBOSW_WR64(MAC_ADDRESS_INDEX, tmp64, sc);
+	ROBOSW_WR(VID_TABLE_INDEX, vid, sc);
+	tmp = ARL_RW_CTL_READ;
+	ROBOSW_WR(ARL_RW_CTL, tmp, sc);
+	tmp = ARL_RW_CTL_START | ARL_RW_CTL_READ;
+	ROBOSW_WR(ARL_RW_CTL, tmp, sc);
+
+	ind = ROBOSW_OP_RETRY;
+	for (; ind > 0; ind--) {
+		ROBOSW_RD(ARL_RW_CTL, tmp, sc);
+		if ((tmp & ARL_RW_CTL_DONE) == 0)
+			break;
+	}
+
+	/* Timeout */
+	if (ind == 0)
+		return (ENXIO);
+
+	ROBOSW_RD64(ARL_ENTRY_0, tmp64, sc);
+	CTR2(KTR_DEV,"robosw: found ARL0: 0x%x%x",
+	    (tmp64 >> 32) & UINT32_MAX, tmp64 & UINT32_MAX);
+
+	tmp64 = ((tmp64 << 2) >> 2);
+
+	CTR2(KTR_DEV,"robosw: reset ARL0: 0x%x%x",
+	    (tmp64 >> 32) & UINT32_MAX, tmp64 & UINT32_MAX);
+
+	ROBOSW_WR64(ARL_ENTRY_0, tmp64, sc);
+
+	ROBOSW_RD64(ARL_ENTRY_1, tmp64, sc);
+	CTR2(KTR_DEV,"robosw: found ARL1: 0x%x%x",
+	    (tmp64 >> 32) & UINT32_MAX, tmp64 & UINT32_MAX);
+
+	tmp64 = ((tmp64 << 2) >> 2);
+
+	CTR2(KTR_DEV,"robosw: reset ARL1: 0x%x%x",
+	    (tmp64 >> 32) & UINT32_MAX, tmp64 & UINT32_MAX);
+
+	ROBOSW_WR64(ARL_ENTRY_1, tmp64, sc);
+
+	/* Write changes */
+	tmp = 0;
+	ROBOSW_WR(ARL_RW_CTL, tmp, sc);
+	tmp = ARL_RW_CTL_START;
+	ROBOSW_WR(ARL_RW_CTL, tmp, sc);
+
+	ind = ROBOSW_OP_RETRY;
+	for (; ind > 0; ind--) {
+		ROBOSW_RD(ARL_RW_CTL, tmp, sc);
+		if ((tmp & ARL_RW_CTL_DONE) == 0)
+			break;
+	}
+
+	/* Timeout */
+	if (ind == 0)
+		return (ENXIO);
+
+	return (0);
+}
+#endif

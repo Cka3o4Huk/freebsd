@@ -31,11 +31,13 @@
 #define _ROBOSW_VAR_H_
 
 #include <sys/param.h>
+#include <sys/bus.h>
 #include <sys/malloc.h>
 #include <sys/callout.h>
 #include <sys/time.h>
 #include <sys/socket.h>
 #include <sys/sockio.h>
+#include <sys/sysctl.h>
 
 #include <net/if.h>
 #include <net/if_var.h>
@@ -44,20 +46,60 @@
 #include <dev/etherswitch/etherswitch.h>
 #include <dev/mii/mii.h>
 
-#define	ROBOSW_NUM_PHYS		9
-
-/* VLAN 0,1 and 4095 are reserved, so default VLAN ID is 2 */
-#define	ROBOSW_DEF_VLANID	2
-#define ROBOSW_DEF_MASK		0x11e
-
 MALLOC_DECLARE(M_BCMSWITCH);
 
-#define	ROBOSWHALSIZE		10
-
 typedef void (*voidfunctype) (void);
-
 struct robosw_softc;
 struct robosw_hal;
+struct robosw_api;
+struct robosw_arl_entry;
+struct robosw_arl_table;
+
+extern struct robosw_hal bcm5325_hal;	/* BCM5325 */
+extern struct robosw_hal bcm5358_hal;	/* BCM5358 */
+extern struct robosw_hal bcm53115_hal;	/* BCM5395/53115/53118/53125?; 5397?/5398? */
+
+#define ROBOSWHALSIZE	(sizeof(struct robosw_api)/sizeof(voidfunctype))
+
+/* Read/write access to SWITCH registers via PSEUDO PHY */
+uint32_t	robosw_read4(struct robosw_softc *sc, uint32_t reg);
+int		robosw_write4(struct robosw_softc *sc, uint32_t reg, uint32_t val);
+int		robosw_op(struct robosw_softc *sc, uint32_t reg, uint32_t *res,
+		    int is_write);
+int		robosw_op64(struct robosw_softc *sc, uint32_t reg, uint64_t *res,
+		    int is_write);
+
+/* Etherswitch interface */
+void		robosw_lock(device_t dev);
+void		robosw_unlock(device_t dev);
+int		robosw_getvgroup(device_t dev, etherswitch_vlangroup_t *vg);
+int		robosw_setvgroup(device_t dev, etherswitch_vlangroup_t *vg);
+int		robosw_getport(device_t dev, etherswitch_port_t *p);
+int		robosw_setport(device_t dev, etherswitch_port_t *p);
+
+/* HAL interface */
+void		robosw_hal_init(struct robosw_softc *sc);
+
+/* Chip operations */
+int		robosw_reset(device_t dev);
+
+/* Common chip actions: */
+/*	- enable/disable forwarding */
+int		robosw_enable_fw(device_t dev, uint32_t forward);
+
+/* SYSCTL functions */
+int		robosw_init_sysctl(device_t dev);
+int		robosw_sysctl_dump(SYSCTL_HANDLER_ARGS);
+int		robosw_mib(SYSCTL_HANDLER_ARGS);
+int		robosw_mib_reset(SYSCTL_HANDLER_ARGS);
+
+int		robosw_arl_table(device_t dev, etherswitch_atu_table_t *table);
+int		robosw_arl_entry(device_t dev, etherswitch_atu_entry_t *entry);
+int		robosw_arl_flushall(device_t dev);
+
+/* Definitions */
+#define	ROBOSW_NUM_PHYS		9
+#define	ROBOSW_ARL_TABLE	4096
 
 struct robosw_api {
 	/* Initialization functions */
@@ -81,6 +123,12 @@ struct robosw_api {
 	    int *vlan_id, int *members, int *untagged, int *forward_id);
 	int (* vlan_set_vlan_group) (struct robosw_softc *sc, int vlan_group,
 	    int vlan_id, int members, int untagged, int forward_id);
+
+	/* ARL functions */
+	int (* arl_iterator) (struct robosw_softc *sc);
+	int (* arl_next) (struct robosw_softc *sc, int *portmask,
+	    uint8_t (*es_macaddr)[ETHER_ADDR_LEN], uint32_t *vid);
+	int (* arl_flushall) (struct robosw_softc *sc);
 };
 
 struct robosw_functions {
@@ -96,29 +144,45 @@ struct robosw_hal {
 	struct robosw_functions	*self;
 };
 
-#define	ROBOSW_PARENT_API(hal)	(&((hal).parent->self->api))
+struct robosw_arl_entry {
+	uint8_t		macaddr[ETHER_ADDR_LEN];
+	uint16_t	vid;
+	uint16_t	portmask;
+	uint16_t	flags;
+};
+
+struct robosw_arl_table {
+	int			position;
+	struct robosw_arl_entry	items[ROBOSW_ARL_TABLE];
+};
 
 struct robosw_softc {
-	struct mtx	 sc_mtx;		/* serialize access to softc */
-	device_t	 sc_dev;
-	device_t	 sc_parent;
-	int		 sc_full_reset;	/* see possible values below */
-	int		 sc_debug; 	/* debug */
-	char		*chipname;	/* chip id */
-	int		 media;		/* cpu port media */
-	int		 cpuport;	/* which PHY is connected to the CPU */
-	int		 phymask;	/* PHYs we manage */
-	int		 numports;	/* number of ports */
-	uint32_t	 vlan_mode;	/* port-based or 1q */
-	int		 ifpport[MII_NPHY];
-	int		*portphy;
-	char		*ifname[ROBOSW_NUM_PHYS];
-	device_t	 miibus[ROBOSW_NUM_PHYS];
-	struct ifnet	*ifp[ROBOSW_NUM_PHYS];
-	struct callout	 callout_tick;
-	struct robosw_functions	hal;
-	struct etherswitch_info	info;
+	struct mtx	 		 sc_mtx;	/* serialize access to softc */
+	device_t	 		 sc_dev;
+	device_t	 		 sc_parent;
+	int		 		 sc_full_reset; /* see possible values below */
+	int				 sc_debug; 	/* debug */
+	int		 		 media;		/* cpu port media */
+	int		 		 cpuport;	/* which PHY is connected to the CPU */
+	int				 phymask;	/* PHYs we manage */
+	int				 numports;	/* number of ports */
+	int				 ifpport[MII_NPHY];
+	int				*portphy;
+	int				 arl_hash_mode;	/* IVL or SVL (individual or shared) */
+	char				*chipname;	/* chip id */
+	char				*ifname[ROBOSW_NUM_PHYS];
+	uint32_t			 vlan_mode;	/* port-based or 1q */
+	device_t			 sc_miibus[ROBOSW_NUM_PHYS];
+	struct ifnet			*ifp[ROBOSW_NUM_PHYS];
+	struct callout			 callout_tick;
+	struct etherswitch_info		 info;
+	struct robosw_functions		 hal;
+	struct robosw_arl_table		*arl_table;
 };
+
+/* VLAN 0,1 and 4095 are reserved, so default VLAN ID is 2 */
+#define	ROBOSW_DEF_VLANID	2
+#define ROBOSW_DEF_MASK		0x11e
 
 /* full reset possible values */
 #define	ROBOSW_NORESET		0	/* 0b00 - not required/supported */
@@ -130,52 +194,57 @@ struct robosw_softc {
 #define	ROBOSW_MIB_GOODRXPKTS	0
 #define	ROBOSW_MIB_GOODTXPKTS	1
 
-#define ROBOSW_LOCK(_sc)			mtx_lock(&(_sc)->sc_mtx)
-#define ROBOSW_UNLOCK(_sc)			mtx_unlock(&(_sc)->sc_mtx)
+/* Helper macros */
+#define	ROBOSW_PARENT_API(_hal)	(&((_hal).parent->self->api))
+#define ROBOSW_API_SOFTC(_sc)	(&((_sc)->hal.api))
+
+#define ROBOSW_LOCK(_sc)		mtx_lock(&(_sc)->sc_mtx)
+#define ROBOSW_UNLOCK(_sc)		mtx_unlock(&(_sc)->sc_mtx)
 #define ROBOSW_LOCK_ASSERT(_sc, _what)	mtx_assert(&(_sc)->sc_mtx, (_what))
 #define ROBOSW_TRYLOCK(_sc)		mtx_trylock(&(_sc)->sc_mtx)
 
-/* Read/write access to SWITCH registers via PSEUDO PHY */
-uint32_t	robosw_read4(struct robosw_softc *sc, uint32_t reg);
-int		robosw_write4(struct robosw_softc *sc, uint32_t reg, uint32_t val);
-int		robosw_op(struct robosw_softc *sc, uint32_t reg, uint32_t *res,
-		    int is_write);
-
-/* Etherswitch interface */
-void		robosw_lock(device_t dev);
-void		robosw_unlock(device_t dev);
-int		robosw_getvgroup(device_t dev, etherswitch_vlangroup_t *vg);
-int		robosw_setvgroup(device_t dev, etherswitch_vlangroup_t *vg);
-int		robosw_getport(device_t dev, etherswitch_port_t *p);
-int		robosw_setport(device_t dev, etherswitch_port_t *p);
-
-#define ROBOSW_RD(_reg, _val, _sc)						\
+#define ROBOSW_RD(_reg, _val, _sc)					\
 	do { 								\
 		int	robosw_err; 					\
 		robosw_err = robosw_op(_sc, _reg, &_val, 0);		\
-		if (robosw_err) {						\
+		if (robosw_err) {					\
 			device_printf(_sc->sc_dev, "can't read"		\
-			    " " #_reg ", err: %d\n", robosw_err);		\
+			    " " #_reg ", err: %d\n", robosw_err);	\
 			return (robosw_err);				\
 		}							\
 	} while (0);
 
-#define ROBOSW_WR(_reg, _val, _sc)						\
+#define ROBOSW_RD64(_reg, _val, _sc)					\
+	do { 								\
+		int	robosw_err; 					\
+		robosw_err = robosw_op64(_sc, _reg, &_val, 0);		\
+		if (robosw_err) {					\
+			device_printf(_sc->sc_dev, "can't read"		\
+			    " " #_reg ", err: %d\n", robosw_err);	\
+			return (robosw_err);				\
+		}							\
+	} while (0);
+
+#define ROBOSW_WR(_reg, _val, _sc)					\
 	do { 								\
 		int	robosw_err; 					\
 		robosw_err = robosw_op(_sc, _reg, &_val, 1);		\
-		if (robosw_err) {						\
+		if (robosw_err) {					\
 			device_printf(_sc->sc_dev, "can't write"	\
-			    " " #_reg ", err: %d\n", robosw_err);		\
+			    " " #_reg ", err: %d\n", robosw_err);	\
 			return (robosw_err);				\
 		}							\
 	} while (0);
 
-/* Chip operations */
-int	robosw_reset(device_t dev);
-
-/* Common chip actions: */
-/*	- enable/disable forwarding */
-int	robosw_enable_fw(device_t dev, uint32_t forward);
+#define ROBOSW_WR64(_reg, _val, _sc)					\
+	do { 								\
+		int	robosw_err; 					\
+		robosw_err = robosw_op64(_sc, _reg, &_val, 1);		\
+		if (robosw_err) {					\
+			device_printf(_sc->sc_dev, "can't write"	\
+			    " " #_reg ", err: %d\n", robosw_err);	\
+			return (robosw_err);				\
+		}							\
+	} while (0);
 
 #endif /* _ROBOSW_VAR_H_ */

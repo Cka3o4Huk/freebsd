@@ -1,5 +1,5 @@
 /*-
- * Copyright (c) 2016 Michael Zhilin.
+ * Copyright (c) 2019 Michael Zhilin <mizhka@freebsd.org>
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -25,10 +25,55 @@
  *
  * $FreeBSD$
  */
-#ifndef _ROBOSWIDS_H_
-#define _ROBOSWIDS_H_
 
-#define	BCM5325			0x00005325
-#define	BCM53115		0x00053115
+#include "robosw_var.h"
 
-#endif /* _B53SWITCHIDS_H_ */
+int
+robosw_arl_entry(device_t dev, etherswitch_atu_entry_t *entry)
+{
+	struct robosw_softc	*sc;
+	struct robosw_api	*api;
+
+	sc = device_get_softc(dev);
+	api = ROBOSW_API_SOFTC(sc);
+
+	return (api->arl_next(sc, &(entry->es_portmask), &(entry->es_macaddr),
+	    NULL));
+}
+
+/*
+ * This call should fetch all table into temporary buffer for further access
+ * If it's called second time, then it will fetch all buckets again
+ */
+int
+robosw_arl_table(device_t dev, etherswitch_atu_table_t *table)
+{
+	struct robosw_softc	*sc;
+	struct robosw_api	*api;
+	int			 cnt;
+
+	sc = device_get_softc(dev);
+	api = ROBOSW_API_SOFTC(sc);
+
+	cnt = 0;
+	api->arl_iterator(sc);
+	for (; api->arl_next(sc, NULL, NULL, NULL) == 0;)
+		cnt++;
+
+	table->es_nitems = cnt;
+	api->arl_iterator(sc);
+
+	return (0);
+}
+
+int
+robosw_arl_flushall(device_t dev)
+{
+	struct robosw_softc	*sc;
+	struct robosw_api	*api;
+
+	sc = device_get_softc(dev);
+	api = ROBOSW_API_SOFTC(sc);
+
+	return (api->arl_flushall(sc));
+}
