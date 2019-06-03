@@ -1,0 +1,61 @@
+#
+# Specific board setup for the Buffalo Airstation WHR-300
+#
+# The WHR-300 has the following hardware:
+#
+# + AR7240 CPU SoC & switch
+# + AR9283 bgn
+# + 4MB flash (MX25L3205DMI)
+# + 32MB RAM
+# + uboot environment
+
+# $FreeBSD$
+
+#NO_UNIVERSE
+
+include		"std.AR724X"
+ident		"WHR-300"
+hints		"WHR-300.hints"
+
+makeoptions 	MODULES_OVERRIDE=""
+
+options		AR71XX_REALMEM=32*1024*1024
+options		AR71XX_ENV_UBOOT
+options 	BREAK_TO_DEBUGGER
+options		BOOTVERBOSE
+options 	ROOTDEVNAME=\"ufs:/dev/map/rootfs.uzip\"
+#options		TSLOG
+
+# GEOM modules
+device		geom_map	# to get access to the SPI flash partitions
+device		geom_uzip	# compressed in-memory filesystem hackery!
+
+# Flash options
+options 	AR71XX_ATH_EEPROM	# Fetch EEPROM/PCI config from flash
+options 	ATH_EEPROM_FIRMWARE	# Use EEPROM from flash
+device		firmware		# Used by the above
+
+# Ethernet options
+options		ARGE_MDIO	# Export an MDIO bus separate from arge
+device		miiproxy	# MDIO bus <-> MII PHY rendezvous
+device		etherswitch
+device		arswitch
+
+# Wi-Fi
+device		pci
+device		ar724x_pci
+nodevice	usb
+nodevice	ehci
+nodevice	ohci
+nodevice	scbus
+nodevice	da
+nodevice	rtwn
+
+# Performance metrics - to modules
+nodevice	hwpmc_mips24k
+nodevice	hwpmc
+
+# load these via modules, shrink kernel
+nodevice	if_bridge
+nodevice	bridgestp
+

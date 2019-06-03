@@ -1,0 +1,172 @@
+# $FreeBSD$
+
+# arge0 MDIO bus
+hint.argemdio.0.at="nexus0"
+hint.argemdio.0.maddr=0x19000000
+hint.argemdio.0.msize=0x1000
+hint.argemdio.0.order=0
+
+#
+# AR7240 switch config
+#
+hint.arswitch.0.at="mdio0"
+hint.arswitch.0.is_7240=1
+hint.arswitch.0.numphys=4
+hint.arswitch.0.phy4cpu=1       # phy 4 is a "CPU" separate PHY
+hint.arswitch.0.is_rgmii=0
+hint.arswitch.0.is_gmii=0       # arge1 <-> switch PHY is MII
+
+# arge0 - MII, autoneg, phy(4)
+hint.arge.0.phymask=0x10        # PHY4
+hint.arge.0.eeprommac=0x1f05120c
+hint.arge.0.mdio=mdioproxy1     # .. off of the switch mdiobus
+
+# arge1 - MII, 100/full
+hint.arge.1.phymask=0x0         # No directly mapped PHYs
+hint.arge.1.media=1000
+hint.arge.1.fduplex=1
+
+# ath0 - slot 0
+hint.pcib.0.bus.0.0.0.ath_fixup_addr=0x1fff1000
+hint.pcib.0.bus.0.0.0.ath_fixup_size=4096
+
+# .. and now, telling each ath(4) NIC where to find the firmware
+# image.
+hint.ath.0.eeprom_firmware="pcib.0.bus.0.0.0.eeprom_firmware"
+
+# Inherited from AR724X_BASE.hints
+#hint.mx25l.0.at="spibus0"
+#hint.mx25l.0.cs=0
+
+# Geom MAP
+# The WHR-300 has 4MB flash
+
+# mtdparts=ar7240-nor0:
+#  256k(u-boot)
+#   64k(u-boot-env)
+#   64k@320k(ART)
+# 1152k@384k(uImage)
+# 6592k@1536k(rootfs)
+#   64k@8128k(properties)
+
+# 0x000000000000-0x00000003e000 : "uboot"
+# 0x00000003e000-0x000000040000 : "uboot-env"
+# 0x000000040000-0x0000003d0000 : "kernel + rootfs"
+# 0x0000003d0000-0x0000003e0000 : "cfg"
+# 0x0000003e0000-0x0000003f0000 : "nvram"
+# 0x0000003f0000-0x000000400000 : "ART"
+
+# Boot Loader
+hint.map.0.at="flash/spi0"
+hint.map.0.start=0x00000000
+hint.map.0.end=  0x0003e000
+hint.map.0.name="uboot"
+hint.map.0.readonly=1
+
+hint.map.1.at="flash/spi0"
+hint.map.1.start=0x0003e000
+hint.map.1.end=  0x00040000       # 64k u-boot-env
+hint.map.1.name="u-boot-env"
+hint.map.1.readonly=1
+
+hint.map.2.at="flash/spi0"
+hint.map.2.start=0x00040000
+hint.map.2.end=  "search:0x00100000:0x10000:.!/bin/sh"
+hint.map.2.name="kernel"
+hint.map.2.readonly=1
+
+hint.map.3.at="flash/spi0"
+hint.map.3.start="search:0x00100000:0x10000:.!/bin/sh"
+hint.map.3.end=  0x003d0000
+hint.map.3.name="rootfs"
+hint.map.3.readonly=1
+
+hint.map.4.at="flash/spi0"
+hint.map.4.start=0x003d0000
+hint.map.4.end=  0x003e0000
+hint.map.4.name="cfg"
+hint.map.4.readonly=0
+
+hint.map.5.at="flash/spi0"
+hint.map.5.start=0x003e0000
+hint.map.5.end=  0x003f0000       # 64k ART
+hint.map.5.name="nvram"
+hint.map.5.readonly=1
+
+hint.map.6.at="flash/spi0"
+hint.map.6.start=0x003f0000
+hint.map.6.end=  0x00400000       # 64k ART
+hint.map.6.name="ART"
+hint.map.6.readonly=1
+
+# GPIO specific configuration block
+
+#define GPIO_PIN_INPUT          0x0001  /* input direction */
+#define GPIO_PIN_OUTPUT         0x0002  /* output direction */
+#define GPIO_PIN_OPENDRAIN      0x0004  /* open-drain output */
+#define GPIO_PIN_PUSHPULL       0x0008  /* push-pull output */
+#define GPIO_PIN_TRISTATE       0x0010  /* output disabled */
+#define GPIO_PIN_PULLUP         0x0020  /* internal pull-up enabled */
+#define GPIO_PIN_PULLDOWN       0x0040  /* internal pull-down enabled */
+#define GPIO_PIN_INVIN          0x0080  /* invert input */
+#define GPIO_PIN_INVOUT         0x0100  /* invert output */
+#define GPIO_PIN_PULSATE        0x0200  /* pulsate in hardware */
+  
+# Pin 1  - SCK
+# Pin 2  - SDA
+# Pin 3  - test 2
+# Pin 4  - test 3
+# Pin 5  - USB (LED Blue)
+# Pin 6  - test a
+# Pin 7  - Security (LED Orange)
+# Pin 8  - Router (LED Green)
+# Pin 9  - Movie Engine On (LED Blue)
+# Pin 10 - Movie Engine Off (LED Blue)
+# Pin 11 - test a
+# Pin 12 - test a
+# Pin 13 - test a
+# Pin 14 - USB Power (turn on by default)
+# Pin 15 - test a
+# Pin 16 - test a
+# Pin 17 - diag (LED red)
+
+# Don't flip on anything that isn't already enabled.
+# Force on USB power pin 14
+#hint.gpio.0.function_set=0x00000000
+#hint.gpio.0.function_clear=0x00000000
+
+# These are the GPIO LEDs and buttons which can be software controlled.
+hint.gpio.0.pinmask=0x000103D0
+
+hint.gpio.0.pinon=0x00000000
+
+hint.gpioiic.0.at="gpiobus0"
+hint.gpioiic.0.pins=0x0003
+hint.gpioiic.0.sda=0
+hint.gpioiic.0.scl=1
+
+# LEDs are configured separately and driven by the LED device
+# usb tested good
+hint.gpioled.0.at="gpiobus0"
+hint.gpioled.0.name="blue-usb"
+hint.gpioled.0.pins=0x00000010
+
+hint.gpioled.1.at="gpiobus0"
+hint.gpioled.1.name="orange-security"
+hint.gpioled.1.pins=0x00000040
+
+hint.gpioled.2.at="gpiobus0"
+hint.gpioled.2.name="green-router"
+hint.gpioled.2.pins=0x00000080
+
+hint.gpioled.3.at="gpiobus0"
+hint.gpioled.3.name="blue-movie-engine-on"
+hint.gpioled.3.pins=0x00000100
+
+hint.gpioled.4.at="gpiobus0"
+hint.gpioled.4.name="blue-movie-engine-off"
+hint.gpioled.4.pins=0x00000200
+
+hint.gpioled.5.at="gpiobus0"
+hint.gpioled.5.name="red-diag"
+hint.gpioled.5.pins=0x00010000
