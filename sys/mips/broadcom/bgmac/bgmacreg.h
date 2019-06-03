@@ -30,7 +30,19 @@
 #ifndef _MIPS_BROADCOM_BGMAC_BGMACREG_H_
 #define _MIPS_BROADCOM_BGMAC_BGMACREG_H_
 
-#define	BGMAC_REG_DEVICE_CONTROL			0x000  /* 300011 */
+#define	BGMAC_REG_DEVICE_CONTROL			0x000  		/* 300011 */
+#define		BGMAC_REG_DEVICE_CONTROL_PM		0x00000080	/* pattern filtering enable */
+#define		BGMAC_REG_DEVICE_CONTROL_IP		0x00000400	/* internal ephy present (rev >= 1) */
+#define		BGMAC_REG_DEVICE_CONTROL_ER		0x00008000	/* ephy reset */
+#define		BGMAC_REG_DEVICE_CONTROL_MP		0x00010000	/* mii phy mode enable */
+#define		BGMAC_REG_DEVICE_CONTROL_CO		0x00020000	/* mii phy mode: enable clocks */
+#define		BGMAC_REG_DEVICE_CONTROL_PA_MASK	0x007c0000	/* mii phy mode: mdc/mdio phy address */
+#define		BGMAC_REG_DEVICE_CONTROL_PA_SHIFT	18
+#define		BGMAC_REG_DEVICE_CONTROL_FS_MASK	0x03800000	/* fifo size (rev >= 8) */
+#define		BGMAC_REG_DEVICE_CONTROL_FS_SHIFT	23
+#define		BGMAC_REG_DEVICE_CONTROL_FS_4K		0		/* 4Kbytes */
+#define		BGMAC_REG_DEVICE_CONTROL_FS_512		1		/* 512bytes */
+
 #define	BGMAC_REG_DEVICE_STATUS				0x004  /* 4110100 */
 #define	BGMAC_REG_BIST_STATUS				0x00c  /* 0 */
 #define	BGMAC_REG_INTR_STATUS				0x020  /* 10 */
@@ -46,7 +58,17 @@
 #define		BGMAC_REG_INTR_STATUS_ERR_DESC		0x00000400
 #define		BGMAC_REG_INTR_STATUS_MDIO		0x00000010
 #define		BGMAC_REG_INTR_STATUS_BITS		\
-	"\020\001MRO\002MTO\003TFD\004LS\005MDIO\006MR\007MT\010TO\021RX\031TXA\032TXB\033TXC\034TXD\013EDESC\014EDATA\015EPROTO\016ERXUND\017ERXOVER\020ETXOVER"
+    "\020\001MRO\002MTO\003TFD\004LS\005MDIO\006MR\007MT\010TO\021RX\031TXA" \
+    "\032TXB\033TXC\034TXD\013EDESC\014EDATA\015EPROTO\016ERXUND\017ERXOVER" \
+    "\020ETXOVER"
+/* power management event 		- 6 (PME) */
+/* general purpose timeout		- 7 (TO) */
+/* descriptor error 			- 10 (PC) */
+/* data error 				- 11 (PD) */
+/* descriptor protocol error 		- 12 (DE) */
+/* receive descriptor underflow 	- 13 (RU) */
+
+
 
 enum bgmac_intr_status
 {
@@ -170,11 +192,14 @@ enum bgmac_intr_status
 #define BGMAC_MIB_RX_NONPAUSE				0x420
 
 #define	BGMAC_REG_CMD_CFG			0x808
-#define		BGMAC_REG_CMD_CFG_BITS		\
-	"\020\001Tx\002Rx\005Prom\011NoPause\013HalfDuplex\014Reset\020Loopback"
+#define		BGMAC_REG_CMD_CFG_BITS					\
+	"\020\001Tx\002Rx\003FastEth\004GigaBit\005Prom\006Pad\010PF"	\
+	"\011NoPause\012TAI\013HalfDuplex\014Reset\020Loopback"		\
+	"\30CFE?\031NLC?\032RL?\033RED?\034PE?"
 #define		BGMAC_REG_CMD_CFG_TX		0x00000001	/* Transmit enabled */
 #define		BGMAC_REG_CMD_CFG_RX		0x00000002	/* Read enabled */
 #define		BGMAC_REG_CMD_CFG_SPEED		0x0000000C	/* Select speed: 10/100/1000 */
+#define		BGMAC_REG_CMD_CFG_SPEED_100	0x00000004	/* Fast Ethernet */
 #define 	BGMAC_REG_CMD_CFG_PROM		0x00000010	/* Promiscuous mode */
 #define		BGMAC_REG_CMD_CFG_PAUSEIGNORE	0x00000100	/* Ignore RX PAUSE frames */
 #define		BGMAC_REG_CMD_CFG_HALFDUPLEX	0x00000400	/* Half Duplex flag */
@@ -191,6 +216,9 @@ enum bgmac_intr_status
 #define		BGMAC_REG_CMD_CFG_NLC		0x01000000
 #define		BGMAC_REG_CMD_CFG_TPI		0x10000000
 #define		BGMAC_REG_CMD_CFG_AT		0x20000000
+
+#define	BGMAC_REG_MAC1				0x80c
+#define	BGMAC_REG_MAC2				0x810
 
 /* UNKNOWN purpose */
 #define	BGMAC_PWR_CTL				0x1e8
