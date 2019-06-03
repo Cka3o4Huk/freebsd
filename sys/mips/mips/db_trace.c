@@ -79,6 +79,7 @@ extern char edata[];
 #define	MIPS_START_OF_FUNCTION(ins)	((((ins) & 0xffff8000) == 0x27bd8000) \
 	|| (((ins) & 0xffff8000) == 0x67bd8000))
 
+/* ADDU $gp $gp $t9 */
 #define	MIPS_START_OF_UL_FUNCTION(ins)	((ins) == 0x0399e021)
 /*
  * MIPS ABI 3.0 requires that all functions return using the 'j ra' instruction
@@ -103,15 +104,17 @@ stacktrace_subr(register_t pc, register_t sp, register_t ra)
 	 * Arrays for a0..a3 registers and flags if content
 	 * of these registers is valid, e.g. obtained from the stack
 	 */
-	int valid_args[4];
-	register_t args[4];
-	register_t va, subr, cause, badvaddr;
-	unsigned instr, mask;
-	unsigned int frames = 0;
-	int more, stksize, j;
-	register_t	next_ra;
-	bool trapframe;
+	int		valid_args[4];
+	register_t	args[4];
+	register_t 	va, subr, cause, badvaddr, next_ra;
+	unsigned 	instr, mask;
+	unsigned int 	frames;
+	int 		more, stksize, j, err;
+	bool 		trapframe;
+	db_expr_t	delta;
+	/* c_db_sym_t	cursym; */
 
+	frames = 0;
 /* Jump here when done with a frame, to start a new one */
 loop:
 
@@ -141,16 +144,15 @@ loop:
 
 	/* Check for bad SP: could foul up next frame. */
 	if (!MIPS_IS_VALID_KERNELADDR(sp)) {
-		struct proc *p;
-		struct vm_map *vm;
-		vm_map_entry_t entry;
-		vm_object_t mem;
-		vm_pindex_t pindex;
-		vm_prot_t prot;
-		struct vnode *vn;
-		boolean_t wired;
-		char *atpath, *freepath;
-		int err;
+		struct proc	*p;
+		struct vm_map	*vm;
+		vm_map_entry_t	 entry;
+		vm_object_t	 mem;
+		vm_pindex_t	 pindex;
+		vm_prot_t	 prot;
+		struct vnode	*vn;
+		boolean_t	 wired;
+		char		*atpath, *freepath;
 
 		//db_printf("SP 0x%jx: not in kernel\n", (uintmax_t)sp);
 		p = curproc;
@@ -281,6 +283,32 @@ loop:
 			va += sizeof(int);
 		subr = va;
 	}
+
+	/* Validate found subr against kernel symbol tables */
+	if (MIPS_IS_VALID_KERNELADDR(sp)) {
+		/* cursym = */
+		db_search_symbol(pc, DB_STGY_PROC, &delta);
+		/*
+		db_printf("---validate pc %jx subr %jx delta %jx\n",
+		    (uintmax_t)(u_register_t) pc,
+		    (uintmax_t)(u_register_t) subr,
+		    (uintmax_t)(u_register_t) delta);
+		*/
+
+		/* ABI doesn't require [d]addiu sp,sp,-<frame_size> be first */
+		if ( delta > (pc - subr))
+			goto scan_ops;
+
+		/* XXX why 4? */
+		if ( (pc - subr - delta) < 4 * sizeof(void*))
+			goto scan_ops;
+
+		subr = pc - delta;
+		/* TODO: scan ops for usage of A0..A3 as arguments */
+		goto done;
+	};
+
+scan_ops:
 	/* scan forwards to find stack size and any saved registers */
 	stksize = 0;
 	more = 3;
