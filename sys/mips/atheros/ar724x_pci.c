@@ -291,6 +291,9 @@ ar724x_pci_fixup(device_t dev, long flash_addr, int len)
 	/* Save bar(0) address - just to flush bar(0) (SoC WAR) ? */
 	bar0 = ar724x_pci_read_config(dev, 0, 0, 0, PCIR_BAR(0), 4);
 
+	if (bootverbose)
+		printf("    bar0=0x%08x\n    flash_addr=%p\n", bar0, cal_data);
+
 	/* Write temporary BAR0 to map the NIC into a fixed location */
 	/* XXX AR7240: 0xffff; 7241/7242/9344: 0x1000ffff */
 	ar724x_pci_write_config(dev, 0, 0, 0, PCIR_BAR(0),
