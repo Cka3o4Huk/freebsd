@@ -150,6 +150,7 @@ static struct mx25l_flash_ident flash_devices[] = {
 
 	/* GigaDevice */
 	{ "gd25q64",	0xc8, 0x4017, 64 * 1024, 128, FL_ERASE_4K },
+	{ "gd25q128",	0xc8, 0x4018, 64 * 1024, 256, FL_ERASE_4K | FL_ERASE_32K },
 };
 
 static int
@@ -629,12 +630,12 @@ mx25l_getattr(struct bio *bp)
 static void
 mx25l_task(void *arg)
 {
-	struct mx25l_softc *sc = (struct mx25l_softc*)arg;
+	struct mx25l_softc *sc;
 	struct bio *bp;
-	device_t dev;
+
+	sc = (struct mx25l_softc*)arg;
 
 	for (;;) {
-		dev = sc->sc_dev;
 		M25PXX_LOCK(sc);
 		do {
 			if (sc->sc_taskstate == TSTATE_STOPPING) {
@@ -662,7 +663,6 @@ mx25l_task(void *arg)
 		default:
 			bp->bio_error = EINVAL;
 		}
-
 
 		biodone(bp);
 	}
