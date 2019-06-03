@@ -59,6 +59,8 @@ struct bgmac_softc {
 	u_char                   addr[6];
 	struct bcm_dma		*dma;
 	struct ifmedia		 ifmedia;
+	int			 bgmac_delay_short;	/* short delays */
+	int			 bgmac_delay_long;	/* long delays */
 //	bus_dma_tag_t		 parent_tag, ring_tag;
 //	bus_dmamap_t		 ring_map;
 //	bus_addr_t		 rxdesc_ring_busaddr;
