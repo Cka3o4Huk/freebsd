@@ -35,13 +35,40 @@ int
 robosw_arl_entry(device_t dev, etherswitch_atu_entry_t *entry)
 {
 	struct robosw_softc	*sc;
+	struct robosw_arl_entry	*arl_entry;
+	int			 tmp;
+
+	sc = device_get_softc(dev);
+	arl_entry = STAILQ_FIRST(sc->arl_table);
+
+	for (tmp = 0; tmp < entry->id; tmp++)
+		if ((arl_entry = STAILQ_NEXT(arl_entry, next)) == NULL)
+			return (ENOENT);
+
+	entry->es_portmask = arl_entry->portmask;
+	for (tmp = 0; tmp < ETHER_ADDR_LEN; tmp++)
+		entry->es_macaddr[tmp] = arl_entry->macaddr[tmp];
+
+	return (0);
+}
+
+void
+robosw_arl_free(device_t dev)
+{
+	struct robosw_softc	*sc;
 	struct robosw_api	*api;
+	struct robosw_arl_entry *entry, *entry2;
 
 	sc = device_get_softc(dev);
 	api = ROBOSW_API_SOFTC(sc);
+	entry = STAILQ_FIRST(sc->arl_table);
 
-	return (api->arl_next(sc, &(entry->es_portmask), &(entry->es_macaddr),
-	    NULL));
+	while (entry != NULL) {
+		entry2 = STAILQ_NEXT(entry, next);
+		free(entry, M_BCMSWITCH);
+		entry = entry2;
+	}
+	STAILQ_INIT(sc->arl_table);
 }
 
 /*
@@ -53,18 +80,19 @@ robosw_arl_table(device_t dev, etherswitch_atu_table_t *table)
 {
 	struct robosw_softc	*sc;
 	struct robosw_api	*api;
-	int			 cnt;
+	struct robosw_arl_entry *entry;
 
 	sc = device_get_softc(dev);
 	api = ROBOSW_API_SOFTC(sc);
+	robosw_arl_free(dev);
 
-	cnt = 0;
 	api->arl_iterator(sc);
-	for (; api->arl_next(sc, NULL, NULL, NULL) == 0;)
-		cnt++;
+	for (; api->arl_next(sc) == 0;) {}
 
-	table->es_nitems = cnt;
-	api->arl_iterator(sc);
+	table->es_nitems = 0;
+	STAILQ_FOREACH(entry, sc->arl_table, next) {
+		table->es_nitems++;
+	}
 
 	return (0);
 }
@@ -74,9 +102,20 @@ robosw_arl_flushall(device_t dev)
 {
 	struct robosw_softc	*sc;
 	struct robosw_api	*api;
+	struct robosw_arl_entry	*ent;
+	int			 err;
 
 	sc = device_get_softc(dev);
 	api = ROBOSW_API_SOFTC(sc);
 
-	return (api->arl_flushall(sc));
+	if (api->arl_flushent == NULL)
+		return (ENOSYS);
+
+	STAILQ_FOREACH(ent, sc->arl_table, next) {
+		err = api->arl_flushent(sc, ent);
+		if (err != 0)
+			return (err);
+		}
+
+	return (0);
 }

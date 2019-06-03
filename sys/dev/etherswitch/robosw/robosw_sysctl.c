@@ -60,6 +60,10 @@ robosw_init_sysctl(device_t dev)
 	    CTLFLAG_RD | CTLTYPE_STRING, sc, 0, robosw_sysctl_dump, "A",
 	    "dump of registers");
 
+	SYSCTL_ADD_PROC(ctx, SYSCTL_CHILDREN(tree), OID_AUTO, "addresses",
+	    CTLFLAG_RD | CTLTYPE_STRING, sc, 0, robosw_sysctl_arl_dump, "A",
+	    "dump of ARL table");
+
 	if (sc->hal.api.mib_get == NULL)
 		return (0);
 
@@ -89,7 +93,7 @@ robosw_init_sysctl(device_t dev)
 		    (i << 4) | ROBOSW_MIB_GOODRXPKTS, robosw_mib, "I",
 		    "number of packets received by port");
 
-		SYSCTL_ADD_PROC(ctx, SYSCTL_CHILDREN(stats_node), OID_AUTO,
+		SYSCTL_ADD_PROC(ctx, SYSCTL_CHILDREN(port_node), OID_AUTO,
 		    "tx", CTLFLAG_RD | CTLTYPE_U16, sc,
 		    (i << 4) | ROBOSW_MIB_GOODTXPKTS, robosw_mib, "I",
 		    "number of packets sent by port");
@@ -162,3 +166,28 @@ robosw_sysctl_dump(SYSCTL_HANDLER_ARGS)
 	sbuf_delete(&sbuf);
 	return (error);
 }
+
+int
+robosw_sysctl_arl_dump(SYSCTL_HANDLER_ARGS)
+{
+	struct robosw_softc	*sc;
+	struct robosw_arl_entry	*ent;
+	struct sbuf 		 sbuf;
+	int			 error;
+
+	sc = (struct robosw_softc *) arg1;
+	sbuf_new_for_sysctl(&sbuf, NULL, 128, req);
+	sbuf_printf(&sbuf, "\n");
+
+	STAILQ_FOREACH(ent, sc->arl_table, next) {
+		sbuf_printf(&sbuf, "portmask: %b vid: 0x%x mac addr: "
+		    MAC_FORMAT "\n", ent->portmask, ROBOSWPORTBITS, ent->vid,
+		    ent->macaddr[0], ent->macaddr[1], ent->macaddr[2],
+		    ent->macaddr[2], ent->macaddr[4], ent->macaddr[5]);
+	}
+
+	error = sbuf_finish(&sbuf);
+	sbuf_delete(&sbuf);
+	return (error);
+}
+
