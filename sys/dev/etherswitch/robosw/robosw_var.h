@@ -90,12 +90,15 @@ int		robosw_enable_fw(device_t dev, uint32_t forward);
 /* SYSCTL functions */
 int		robosw_init_sysctl(device_t dev);
 int		robosw_sysctl_dump(SYSCTL_HANDLER_ARGS);
+int		robosw_sysctl_arl_dump(SYSCTL_HANDLER_ARGS);
 int		robosw_mib(SYSCTL_HANDLER_ARGS);
 int		robosw_mib_reset(SYSCTL_HANDLER_ARGS);
 
+/* Address Resolution Logic */
 int		robosw_arl_table(device_t dev, etherswitch_atu_table_t *table);
 int		robosw_arl_entry(device_t dev, etherswitch_atu_entry_t *entry);
 int		robosw_arl_flushall(device_t dev);
+void		robosw_arl_free(device_t dev);
 
 /* Definitions */
 #define	ROBOSW_NUM_PHYS		9
@@ -126,9 +129,9 @@ struct robosw_api {
 
 	/* ARL functions */
 	int (* arl_iterator) (struct robosw_softc *sc);
-	int (* arl_next) (struct robosw_softc *sc, int *portmask,
-	    uint8_t (*es_macaddr)[ETHER_ADDR_LEN], uint32_t *vid);
-	int (* arl_flushall) (struct robosw_softc *sc);
+	int (* arl_next) (struct robosw_softc *sc);
+	int (* arl_flushent) (struct robosw_softc *sc,
+	    struct robosw_arl_entry *ent);
 };
 
 struct robosw_functions {
@@ -145,16 +148,14 @@ struct robosw_hal {
 };
 
 struct robosw_arl_entry {
+	STAILQ_ENTRY(robosw_arl_entry)	next;
 	uint8_t		macaddr[ETHER_ADDR_LEN];
 	uint16_t	vid;
 	uint16_t	portmask;
 	uint16_t	flags;
 };
 
-struct robosw_arl_table {
-	int			position;
-	struct robosw_arl_entry	items[ROBOSW_ARL_TABLE];
-};
+STAILQ_HEAD(robosw_arl_table, robosw_arl_entry);
 
 struct robosw_softc {
 	struct mtx	 		 sc_mtx;	/* serialize access to softc */
@@ -206,7 +207,7 @@ struct robosw_softc {
 #define ROBOSW_RD(_reg, _val, _sc)					\
 	do { 								\
 		int	robosw_err; 					\
-		robosw_err = robosw_op(_sc, _reg, &_val, 0);		\
+		robosw_err = robosw_op(_sc, _reg, &(_val), 0);		\
 		if (robosw_err) {					\
 			device_printf(_sc->sc_dev, "can't read"		\
 			    " " #_reg ", err: %d\n", robosw_err);	\
@@ -217,7 +218,7 @@ struct robosw_softc {
 #define ROBOSW_RD64(_reg, _val, _sc)					\
 	do { 								\
 		int	robosw_err; 					\
-		robosw_err = robosw_op64(_sc, _reg, &_val, 0);		\
+		robosw_err = robosw_op64(_sc, _reg, &(_val), 0);		\
 		if (robosw_err) {					\
 			device_printf(_sc->sc_dev, "can't read"		\
 			    " " #_reg ", err: %d\n", robosw_err);	\
@@ -228,7 +229,7 @@ struct robosw_softc {
 #define ROBOSW_WR(_reg, _val, _sc)					\
 	do { 								\
 		int	robosw_err; 					\
-		robosw_err = robosw_op(_sc, _reg, &_val, 1);		\
+		robosw_err = robosw_op(_sc, _reg, &(_val), 1);		\
 		if (robosw_err) {					\
 			device_printf(_sc->sc_dev, "can't write"	\
 			    " " #_reg ", err: %d\n", robosw_err);	\
@@ -239,7 +240,7 @@ struct robosw_softc {
 #define ROBOSW_WR64(_reg, _val, _sc)					\
 	do { 								\
 		int	robosw_err; 					\
-		robosw_err = robosw_op64(_sc, _reg, &_val, 1);		\
+		robosw_err = robosw_op64(_sc, _reg, &(_val), 1);		\
 		if (robosw_err) {					\
 			device_printf(_sc->sc_dev, "can't write"	\
 			    " " #_reg ", err: %d\n", robosw_err);	\

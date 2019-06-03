@@ -63,12 +63,10 @@ static int	bcm5325_vlan_get_pvlan_group(struct robosw_softc *sc, int vlan_group,
 static int	bcm5325_vlan_set_pvlan_group(struct robosw_softc *sc, int vlan_group,
 		    int vlan_id, int members, int untagged, int forward_id);
 static int	bcm5325_arl_iterator(struct robosw_softc *sc);
-static int	bcm5325_arl_next(struct robosw_softc *sc, int *portmask,
-		    uint8_t (*es_macaddr)[ETHER_ADDR_LEN], uint32_t *vid);
+static int	bcm5325_arl_next(struct robosw_softc *sc);
 
-static int	bcm5325_arl_cleanup(struct robosw_softc *sc,
-		    uint8_t (*es_macaddr)[ETHER_ADDR_LEN], uint32_t vid);
-static int	bcm5325_arl_flushall(struct robosw_softc *sc);
+static int	bcm5325_arl_flushent(struct robosw_softc *sc,
+		    struct robosw_arl_entry *ent);
 
 static uint32_t	bcm5325_mib_get(struct robosw_softc *sc, int port, int metric);
 
@@ -85,7 +83,7 @@ struct robosw_functions bcm5325_f = {
 	.api.vlan_set_pvlan_group = bcm5325_vlan_set_pvlan_group,
 	.api.arl_iterator = bcm5325_arl_iterator,
 	.api.arl_next = bcm5325_arl_next,
-	.api.arl_flushall = bcm5325_arl_flushall,
+	.api.arl_flushent = bcm5325_arl_flushent
 };
 
 struct robosw_hal bcm5325_hal = {
@@ -147,9 +145,6 @@ bcm5325_reset(struct robosw_softc *sc)
 			/* return (ENXIO); */
 		}
 	}
-
-	/* Let's flush ARL */
-	bcm5325_arl_flushall(sc);
 
 	return (0);
 }
@@ -371,12 +366,12 @@ bcm5325_arl_iterator(struct robosw_softc *sc)
 }
 
 static int
-bcm5325_arl_next(struct robosw_softc *sc, int *portmask,
-    uint8_t (*es_macaddr)[ETHER_ADDR_LEN], uint32_t *vid)
+bcm5325_arl_next(struct robosw_softc *sc)
 {
-	uint32_t	val;
-	uint64_t	res;
-	int		ind;
+	struct robosw_arl_entry	*ent;
+	uint32_t		 val;
+	uint64_t		 res;
+	int			 ind;
 
 	ind = ROBOSW_OP_RETRY;
 	for (; ind > 0; ind--) {
@@ -393,58 +388,52 @@ bcm5325_arl_next(struct robosw_softc *sc, int *portmask,
 	ROBOSW_RD64(ARL_SEARCH_RESULT, res, sc);
 	CTR3(KTR_DEV,"robosw: valid ARL: 0x%x 0x%x%x", val,
 	    (res >> 32) & UINT32_MAX, res & UINT32_MAX);
-	if (portmask != NULL) {
-		*portmask = ROBOSW_UNSHIFT(res,ARL_SEARCH_RESULT_PORTID);
-		CTR1(KTR_DEV,"robosw: portmask: 0x%x", *portmask);
-	}
 
-	if (es_macaddr != NULL)
-	{
-		(*es_macaddr)[0] = ROBOSW_UNSHIFT(res,ARL_SEARCH_RESULT_MAC0) & UINT8_MAX;
-		(*es_macaddr)[1] = ROBOSW_UNSHIFT(res,ARL_SEARCH_RESULT_MAC1) & UINT8_MAX;
-		(*es_macaddr)[2] = ROBOSW_UNSHIFT(res,ARL_SEARCH_RESULT_MAC2) & UINT8_MAX;
-		(*es_macaddr)[3] = ROBOSW_UNSHIFT(res,ARL_SEARCH_RESULT_MAC3) & UINT8_MAX;
-		(*es_macaddr)[4] = ROBOSW_UNSHIFT(res,ARL_SEARCH_RESULT_MAC4) & UINT8_MAX;
-		(*es_macaddr)[5] = ROBOSW_UNSHIFT(res,ARL_SEARCH_RESULT_MAC5) & UINT8_MAX;
-		CTR6(KTR_DEV,"robosw: mac addr: %x:%x:%x:%x:%x:%x",
-		    (*es_macaddr)[0], (*es_macaddr)[1], (*es_macaddr)[2],
-		    (*es_macaddr)[2], (*es_macaddr)[4], (*es_macaddr)[5]);
-	}
+	ent = malloc(sizeof(struct robosw_arl_entry), M_BCMSWITCH, M_WAITOK);
 
-	if (vid != NULL)
-	{
-		*vid = ROBOSW_UNSHIFT(res,ARL_SEARCH_RESULT_VID);
-		CTR1(KTR_DEV,"robosw: vid: 0x%x", *vid);
-	}
+	ent->portmask = (1 << ROBOSW_UNSHIFT(res,ARL_SEARCH_RESULT_PORTID));
+	ent->macaddr[0] = ROBOSW_UNSHIFT(res,ARL_SEARCH_RESULT_MAC0) & UINT8_MAX;
+	ent->macaddr[1] = ROBOSW_UNSHIFT(res,ARL_SEARCH_RESULT_MAC1) & UINT8_MAX;
+	ent->macaddr[2] = ROBOSW_UNSHIFT(res,ARL_SEARCH_RESULT_MAC2) & UINT8_MAX;
+	ent->macaddr[3] = ROBOSW_UNSHIFT(res,ARL_SEARCH_RESULT_MAC3) & UINT8_MAX;
+	ent->macaddr[4] = ROBOSW_UNSHIFT(res,ARL_SEARCH_RESULT_MAC4) & UINT8_MAX;
+	ent->macaddr[5] = ROBOSW_UNSHIFT(res,ARL_SEARCH_RESULT_MAC5) & UINT8_MAX;
+	ent->vid = ROBOSW_UNSHIFT(res,ARL_SEARCH_RESULT_VID);
+
+	STAILQ_INSERT_TAIL(sc->arl_table, ent, next);
+
+	CTR2(KTR_DEV,"robosw: portmask: 0x%x vid:0x%x", ent->portmask, ent->vid);
+	CTR6(KTR_DEV,"robosw: mac addr: %02x:%02x:%02x:%02x:%02x:%02x",
+	    ent->macaddr[0], ent->macaddr[1], ent->macaddr[2],
+	    ent->macaddr[2], ent->macaddr[4], ent->macaddr[5]);
 
 	return (0);
 }
 
 static int
-bcm5325_arl_cleanup(struct robosw_softc *sc,
-    uint8_t (*es_macaddr)[ETHER_ADDR_LEN], uint32_t vid)
+bcm5325_arl_flushent(struct robosw_softc *sc, struct robosw_arl_entry *ent)
 {
 	uint32_t	tmp;
 	uint64_t	tmp64;
 	int		ind;
 
 	tmp64 = 0;
-	tmp64 = tmp64 | ROBOSW_SHIFT((uint64_t)(*es_macaddr)[0],MAC_ADDRESS_INDEX_MAC0);
-	tmp64 = tmp64 | ROBOSW_SHIFT((uint64_t)(*es_macaddr)[1],MAC_ADDRESS_INDEX_MAC1);
-	tmp64 = tmp64 | ROBOSW_SHIFT((uint64_t)(*es_macaddr)[2],MAC_ADDRESS_INDEX_MAC2);
-	tmp64 = tmp64 | ROBOSW_SHIFT((uint64_t)(*es_macaddr)[3],MAC_ADDRESS_INDEX_MAC3);
-	tmp64 = tmp64 | ROBOSW_SHIFT((uint64_t)(*es_macaddr)[4],MAC_ADDRESS_INDEX_MAC4);
-	tmp64 = tmp64 | ROBOSW_SHIFT((uint64_t)(*es_macaddr)[5],MAC_ADDRESS_INDEX_MAC5);
+	tmp64 = tmp64 | ROBOSW_SHIFT((uint64_t)(ent->macaddr[0]),MAC_ADDRESS_INDEX_MAC0);
+	tmp64 = tmp64 | ROBOSW_SHIFT((uint64_t)(ent->macaddr[1]),MAC_ADDRESS_INDEX_MAC1);
+	tmp64 = tmp64 | ROBOSW_SHIFT((uint64_t)(ent->macaddr[2]),MAC_ADDRESS_INDEX_MAC2);
+	tmp64 = tmp64 | ROBOSW_SHIFT((uint64_t)(ent->macaddr[3]),MAC_ADDRESS_INDEX_MAC3);
+	tmp64 = tmp64 | ROBOSW_SHIFT((uint64_t)(ent->macaddr[4]),MAC_ADDRESS_INDEX_MAC4);
+	tmp64 = tmp64 | ROBOSW_SHIFT((uint64_t)(ent->macaddr[5]),MAC_ADDRESS_INDEX_MAC5);
+	tmp = ent->vid;
 
-	device_printf(sc->sc_dev,
-	    "lookup ARL by MAC: 0x%llx and VID: 0x%x\n",
-	    tmp64, vid);
+	device_printf(sc->sc_dev, "lookup ARL by MAC: 0x%llx and VID: 0x%x\n",
+	    tmp64, ent->vid);
 	CTR3(KTR_DEV,"robosw: lookup ARL by MAC: 0x%x%x and VID: 0x%x",
-	    (tmp64 >> 32) & UINT32_MAX, tmp64 & UINT32_MAX, vid);
+	    (tmp64 >> 32) & UINT32_MAX, tmp64 & UINT32_MAX, ent->vid);
 
 	/* Read bucket from ARL table by MAC address and VID */
 	ROBOSW_WR64(MAC_ADDRESS_INDEX, tmp64, sc);
-	ROBOSW_WR(VID_TABLE_INDEX, vid, sc);
+	ROBOSW_WR(VID_TABLE_INDEX, tmp, sc);
 	tmp = ARL_RW_CTL_READ;
 	ROBOSW_WR(ARL_RW_CTL, tmp, sc);
 	tmp = ARL_RW_CTL_START | ARL_RW_CTL_READ;
@@ -499,38 +488,6 @@ bcm5325_arl_cleanup(struct robosw_softc *sc,
 	/* Timeout */
 	if (ind == 0)
 		return (ENXIO);
-
-	return (0);
-}
-
-static int
-bcm5325_arl_flushall(struct robosw_softc *sc)
-{
-	int			i, err;
-	uint8_t 		es_macaddr[ETHER_ADDR_LEN];
-	uint32_t		vid;
-	struct robosw_api	*api;
-
-	i = ROBOSW_OP_RETRY;
-	api = &(sc->hal.api);
-
-	err = api->arl_iterator(sc);
-	if (err != 0)
-		return (err);
-
-	/* finite cycle is used to avoid hang in case of hardware mistakes */
-	for (;i>0;i--) {
-		device_printf(sc->sc_dev, "looking for entry\n");
-		err = api->arl_next(sc, NULL, &es_macaddr, &vid);
-		if (err == ENOENT)
-			break;
-		else if (err != 0)
-			return (err);
-		device_printf(sc->sc_dev, "cleanup entry\n");
-		err = bcm5325_arl_cleanup(sc, &es_macaddr, vid);
-		if (err != 0)
-			return (err);
-	}
 
 	return (0);
 }

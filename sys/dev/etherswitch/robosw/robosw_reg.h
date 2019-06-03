@@ -53,7 +53,8 @@
 
 #define	ROBOSWPRINT(_dev)		device_printf(_dev,
 
-#define	ROBOSWPORTBITS	"\020\001p0\002p1\003p2\004p3\005p4\006p5\007p6"
+#define MAC_FORMAT	"%02x:%02x:%02x:%02x:%02x:%02x"
+#define	ROBOSWPORTBITS	"\020\001p0\002p1\003p2\004p3\005p4\006p5\007p6\010p7\011cpu"
 
 #define ROBOSWDUMPREG(_reg)						\
 	ROBOSWPRINT(dev) #_reg "\t=%08x\n", robosw_read4(sc, _reg))

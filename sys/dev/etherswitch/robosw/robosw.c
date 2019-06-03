@@ -179,6 +179,9 @@ robosw_attach(device_t dev)
 	sc->info.es_nvlangroups = ROBOSW_DEF_NVLANS;
 	sc->info.es_vlan_caps = 0;
 	sc->cpuport = PORTMII;
+	sc->arl_table = malloc(sizeof(struct robosw_arl_table), M_BCMSWITCH,
+			    M_WAITOK | M_ZERO);
+	STAILQ_INIT(sc->arl_table);
 
 	if(ROBOSW_API_SOFTC(sc)->init_context != NULL)
 		ROBOSW_API_SOFTC(sc)->init_context(sc);
@@ -345,6 +348,8 @@ robosw_detach(device_t dev)
 
 	bus_generic_detach(dev);
 	mtx_destroy(&sc->sc_mtx);
+	robosw_arl_free(dev);
+	free(sc->arl_table, M_BCMSWITCH);
 
 	return (0);
 }
@@ -526,6 +531,9 @@ postreset:
 	/* Post-reset actions */
 	if (ROBOSW_API_SOFTC(sc)->reset != NULL)
 		err = ROBOSW_API_SOFTC(sc)->reset(sc);
+
+	/* Let's flush ARL */
+	robosw_arl_flushall(dev);
 
 	return (err);
 }
@@ -835,5 +843,5 @@ DRIVER_MODULE(sc_miibus,      robosw, miibus_driver, miibus_devclass, 0, 0);
 
 MODULE_DEPEND(robosw, mdio, 1, 1, 1);
 MODULE_DEPEND(robosw, etherswitch, 1, 1, 1);
-MODULE_DEPEND(robosw, sc_miibus, 1, 1, 1);
+MODULE_DEPEND(robosw, miibus, 1, 1, 1);
 MODULE_VERSION(robosw, 1);

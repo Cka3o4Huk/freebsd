@@ -30,9 +30,11 @@
 #include <sys/cdefs.h>
 __FBSDID("$FreeBSD$");
 
-#include <sys/types.h>
-#include <sys/bus.h>
+#include <sys/param.h>
+#include <sys/systm.h>
+#include <sys/kernel.h>
 #include <sys/errno.h>
+#include <sys/bus.h>
 
 #include "robosw_var.h"
 #include "robosw_reg.h"
@@ -48,8 +50,7 @@ static int 	bcm53115_vlan_enable_1q(struct robosw_softc *sc, int on);
 static uint32_t	bcm53115_mib_get(struct robosw_softc *sc, int port, int metric);
 
 static int	bcm53115_arl_iterator(struct robosw_softc *sc);
-static int	bcm53115_arl_next(struct robosw_softc *sc, int *portmask,
-		    uint8_t (*es_macaddr)[ETHER_ADDR_LEN], uint32_t *vid);
+static int	bcm53115_arl_next(struct robosw_softc *sc);
 
 #ifdef NOTYET
 static int	bcm53115_arl_cleanup(struct robosw_softc *sc,
@@ -60,11 +61,16 @@ struct robosw_functions bcm53115_f = {
 	.api.reset = bcm53115_reset,
 	.api.init_context = bcm53115_init_context,
 	.api.mib_get = bcm53115_mib_get,
+	.api.vlan_get_pvid = NULL, /* inherit from parent */
+	.api.vlan_set_pvid = NULL, /* inherit from parent */
 	.api.vlan_enable_1q = bcm53115_vlan_enable_1q,
 	.api.vlan_get_vlan_group = bcm53115_get_vlan_group,
 	.api.vlan_set_vlan_group = bcm53115_set_vlan_group,
+	.api.vlan_get_pvlan_group = NULL, /* inherit from parent */
+	.api.vlan_set_pvlan_group = NULL, /* inherit from parent */
 	.api.arl_iterator = bcm53115_arl_iterator,
-	.api.arl_next = bcm53115_arl_next
+	.api.arl_next = bcm53115_arl_next,
+	.api.arl_flushent = NULL /* bcm53115_arl_flushent */
 };
 
 struct robosw_hal bcm53115_hal = {
@@ -76,8 +82,9 @@ struct robosw_hal bcm53115_hal = {
 static void
 bcm53115_init_context(struct robosw_softc *sc)
 {
-
+	/* A seven-port nonblocking 10/100/1000 Mbps switch controller */
 	sc->info.es_nports = 7;
+	sc->info.es_nvlangroups = 4095;
 }
 
 static uint32_t
@@ -238,12 +245,12 @@ bcm53115_arl_iterator(struct robosw_softc *sc)
 }
 
 static int
-bcm53115_arl_next(struct robosw_softc *sc, int *portmask,
-    uint8_t (*es_macaddr)[ETHER_ADDR_LEN], uint32_t *vid)
+bcm53115_arl_next(struct robosw_softc *sc)
 {
-	uint32_t	val;
-	uint64_t	res;
-	int		ind;
+	struct robosw_arl_entry	*ent;
+	uint32_t		 val;
+	uint64_t		 res;
+	int			 ind;
 
 	ind = ROBOSW_OP_RETRY;
 	for (; ind > 0; ind--) {
@@ -260,31 +267,25 @@ bcm53115_arl_next(struct robosw_softc *sc, int *portmask,
 	ROBOSW_RD64(ARL_SEARCH_RESULT_53115_R0, res, sc);
 	ROBOSW_RD(ARL_SEARCH_RESULT_53115_RD0, val, sc);
 
+	ent = malloc(sizeof(struct robosw_arl_entry), M_BCMSWITCH, M_WAITOK);
+
+	ent->portmask = ROBOSW_UNSHIFT(res,ARL_SEARCH_RESULT_PORTID);
+	ent->macaddr[0] = ROBOSW_UNSHIFT(res,ARL_SEARCH_RESULT_MAC0) & UINT8_MAX;
+	ent->macaddr[1] = ROBOSW_UNSHIFT(res,ARL_SEARCH_RESULT_MAC1) & UINT8_MAX;
+	ent->macaddr[2] = ROBOSW_UNSHIFT(res,ARL_SEARCH_RESULT_MAC2) & UINT8_MAX;
+	ent->macaddr[3] = ROBOSW_UNSHIFT(res,ARL_SEARCH_RESULT_MAC3) & UINT8_MAX;
+	ent->macaddr[4] = ROBOSW_UNSHIFT(res,ARL_SEARCH_RESULT_MAC4) & UINT8_MAX;
+	ent->macaddr[5] = ROBOSW_UNSHIFT(res,ARL_SEARCH_RESULT_MAC5) & UINT8_MAX;
+	ent->vid = ROBOSW_UNSHIFT(res,ARL_SEARCH_RESULT_VID);
+
+	STAILQ_INSERT_TAIL(sc->arl_table, ent, next);
+
 	CTR3(KTR_DEV,"robosw: valid ARL: 0x%x 0x%x%x", val,
-	    (res >> 32) & UINT32_MAX, res & UINT32_MAX);
-	if (portmask != NULL) {
-		*portmask = ROBOSW_UNSHIFT(val,ARL_SEARCH_RESULT_53115_D_PORTID);
-		CTR1(KTR_DEV,"robosw: portmask: 0x%x", *portmask);
-	}
-
-	if (es_macaddr != NULL)
-	{
-		(*es_macaddr)[0] = ROBOSW_UNSHIFT(res,ARL_SEARCH_RESULT_MAC0) & UINT8_MAX;
-		(*es_macaddr)[1] = ROBOSW_UNSHIFT(res,ARL_SEARCH_RESULT_MAC1) & UINT8_MAX;
-		(*es_macaddr)[2] = ROBOSW_UNSHIFT(res,ARL_SEARCH_RESULT_MAC2) & UINT8_MAX;
-		(*es_macaddr)[3] = ROBOSW_UNSHIFT(res,ARL_SEARCH_RESULT_MAC3) & UINT8_MAX;
-		(*es_macaddr)[4] = ROBOSW_UNSHIFT(res,ARL_SEARCH_RESULT_MAC4) & UINT8_MAX;
-		(*es_macaddr)[5] = ROBOSW_UNSHIFT(res,ARL_SEARCH_RESULT_MAC5) & UINT8_MAX;
-		CTR6(KTR_DEV,"robosw: mac addr: %x:%x:%x:%x:%x:%x",
-		    (*es_macaddr)[0], (*es_macaddr)[1], (*es_macaddr)[2],
-		    (*es_macaddr)[2], (*es_macaddr)[4], (*es_macaddr)[5]);
-	}
-
-	if (vid != NULL)
-	{
-		*vid = ROBOSW_UNSHIFT(res,ARL_SEARCH_RESULT_53115_VID);
-		CTR1(KTR_DEV,"robosw: vid: 0x%x", *vid);
-	}
+		    (res >> 32) & UINT32_MAX, res & UINT32_MAX);
+	CTR2(KTR_DEV,"robosw: portmask: 0x%x vid:0x%x", ent->portmask, ent->vid);
+	CTR6(KTR_DEV,"robosw: mac addr: %x:%x:%x:%x:%x:%x",
+	    ent->macaddr[0], ent->macaddr[1], ent->macaddr[2],
+	    ent->macaddr[2], ent->macaddr[4], ent->macaddr[5]);
 
 	return (0);
 }
