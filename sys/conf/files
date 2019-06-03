@@ -3256,10 +3256,10 @@ dev/usb/controller/usb_controller.c	optional usb
 #
 # USB storage drivers
 #
-dev/usb/storage/cfumass.c	optional cfumass ctl
-dev/usb/storage/umass.c		optional umass
-dev/usb/storage/urio.c		optional urio
-dev/usb/storage/ustorage_fs.c	optional usfs
+dev/usb/storage/cfumass.c	optional cfumass ctl usb
+dev/usb/storage/umass.c		optional umass usb
+dev/usb/storage/urio.c		optional urio usb
+dev/usb/storage/ustorage_fs.c	optional usfs usb
 #
 # USB core
 #
@@ -3383,14 +3383,14 @@ dev/usb/misc/uled.c		optional uled
 #
 # USB input drivers
 #
-dev/usb/input/atp.c		optional atp
-dev/usb/input/uep.c		optional uep
-dev/usb/input/uhid.c		optional uhid
-dev/usb/input/uhid_snes.c	optional uhid_snes
-dev/usb/input/ukbd.c		optional ukbd
-dev/usb/input/ums.c		optional ums
-dev/usb/input/wmt.c		optional wmt
-dev/usb/input/wsp.c		optional wsp
+dev/usb/input/atp.c		optional usb atp
+dev/usb/input/uep.c		optional usb uep
+dev/usb/input/uhid.c		optional usb uhid
+dev/usb/input/uhid_snes.c	optional usb uhid_snes
+dev/usb/input/ukbd.c		optional usb ukbd
+dev/usb/input/ums.c		optional usb ums
+dev/usb/input/wmt.c		optional usb wmt
+dev/usb/input/wsp.c		optional usb wsp
 #
 # USB quirks
 #
@@ -4120,9 +4120,9 @@ net/if_tun.c			optional tun
 net/if_tap.c			optional tap
 net/if_vlan.c			optional vlan
 net/if_vxlan.c			optional vxlan inet | vxlan inet6
-net/ifdi_if.m			optional ether pci
-net/iflib.c			optional ether pci
-net/iflib_clone.c		optional ether pci
+net/ifdi_if.m			optional ether pci iflib
+net/iflib.c			optional ether pci iflib
+net/iflib_clone.c		optional ether pci iflib
 net/mp_ring.c			optional ether
 net/mppcc.c			optional netgraph_mppc_compression
 net/mppcd.c			optional netgraph_mppc_compression
