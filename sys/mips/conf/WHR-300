@@ -29,6 +29,7 @@ options 	ROOTDEVNAME=\"ufs:/dev/map/rootfs.uzip\"
 # GEOM modules
 device		geom_map	# to get access to the SPI flash partitions
 device		geom_uzip	# compressed in-memory filesystem hackery!
+device		xz		# requires for geom_uzip
 
 # Flash options
 options 	AR71XX_ATH_EEPROM	# Fetch EEPROM/PCI config from flash
